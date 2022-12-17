@@ -4,15 +4,27 @@
 #include <Wire.h>
 #include <Keyboard.h>
 
-// Create the neopixel strip with the built in definitions NUM_NEOPIXEL and PIN_NEOPIXEL
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUM_NEOPIXEL, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+class FirstConfig : public DisplayConfiguration {
+  void render(*Adafruit_SH1106G display) {
+    display->println("hello from the config");
+  }
+}
 
-// Create the OLED display
-Adafruit_SH1106G display = Adafruit_SH1106G(128, 64, &SPI1, OLED_DC, OLED_RST, OLED_CS);
-
-// Create the rotary encoder
-RotaryEncoder encoder(PIN_ROTA, PIN_ROTB, RotaryEncoder::LatchMode::FOUR3);
-void checkPosition() {  encoder.tick(); } // just call tick() to check the state.
+class Marco {
+  public:
+    Controller controller;
+    OledDisplay display;
+    DisplayConfiguration dc;
+    Marco() {
+      display = OledDisplay();
+      controller = Controller("--    M.A.R.C.O    --");
+      dc = FirstConfig();      
+    }
+    void refresh() {
+      display.refresh(dc);
+      controller.refresh();
+    }
+}
 // our encoder position state
 int encoder_pos = 0;
 
@@ -20,6 +32,8 @@ char ctrl = KEY_LEFT_CTRL;
 char alt = KEY_LEFT_ALT;
 
 void setup() {
+  static bool pressed = false;
+
   Serial.begin(115200);
   //while (!Serial) { delay(10); }     // wait till serial port is opened
   delay(100);  // RP2040 delay is not a bad idea
@@ -68,17 +82,11 @@ void setup() {
   delay(200);
 }
 
-uint8_t j = 0;
+uint8_t iteration = 0;
 bool i2c_found[128] = {false};
+bool pressed[12] = {false};
 
 void loop() {
-  static bool pressed = false;
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.println("      M.A.R.C.O      ");
-  display.println("");
-  
-  encoder.tick();          // check the encoder
   int newPos = encoder.getPosition();
   if (encoder_pos != newPos) {
     Serial.print("Encoder:");
@@ -92,7 +100,7 @@ void loop() {
   display.print(encoder_pos);
 
   // Scanning takes a while so we don't do it all the time
-  if ((j & 0x3F) == 0) {
+  if ((iteration & 0x3F) == 0) {
     Serial.println("Scanning I2C: ");
     Serial.print("Found I2C address 0x");
     for (uint8_t address = 0; address <= 0x7F; address++) {
@@ -127,29 +135,27 @@ void loop() {
   }
 
   for(int i=0; i< pixels.numPixels(); i++) {
-    pixels.setPixelColor(i, Wheel(((i * 256 / pixels.numPixels()) + j) & 255));
+    pixels.setPixelColor(i, Wheel(((i * 256 / pixels.numPixels()) + iteration) & 255));
   }
   
   for (int i=1; i<=12; i++) {
-    if (!digitalRead(i)) { // switch pressed!
+    if (!digitalRead(i) && !pressed[i]) { // switch pressed!
+      pressed[i] = true;
       Serial.print("Switch "); Serial.println(i);
       pixels.setPixelColor(i-1, 0xFFFFFF);  // make white
       // move the text into a 3x4 grid
       display.setCursor(((i-1) % 3)*48, 32 + ((i-1)/3)*8);
       display.print("KEY");
       display.print(i);
-      char strokes[] = {ctrl, alt, KEY_DELETE};
-      size_t elems = 3;
+      char strokes[] = {KEY_DELETE};
+      size_t elems = 1;
       sendKeyCombo(strokes, elems);
+    } else if (digitalRead(i)) {
+      pressed[i] = false;
     }
   }
 
-  // show neopixels, incredment swirl
-  pixels.show();
-  j++;
-
-  // display oled
-  display.display();
+  iteration++;
 }
 
 void sendKeyCombo(char keys[], size_t elems) {
