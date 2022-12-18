@@ -28,10 +28,10 @@ namespace marco {
   class Controller {
     // Hardware components
     Key keys[12];
-    Adafruit_NeoPixel pixels; // key LEDs
-    Adafruit_SH1106G display;
-    DisplayConfiguration dc;
-    RotaryEncoder encoder;
+    Adafruit_NeoPixel *pixels; // key LEDs
+    Adafruit_SH1106G *display;
+    DisplayConfiguration *dc;
+    RotaryEncoder *encoder;
     // Trackers
     int encoderPos;
     bool i2c_found[128];
@@ -39,13 +39,12 @@ namespace marco {
     String headerText;
     uint8_t iteration;
     public:
-      Controller();
-      Controller(DisplayConfiguration* dconf);
+      Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf);
       void refresh();
     private:
       void setupDisplay();
       void refreshDisplay();
-      void sendKeyCombo();
+      void sendKeyCombo(char keys[], size_t elems);
       void playStartupTone();
       void scanI2c();
       uint32_t Wheel(byte WheelPos);
