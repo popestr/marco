@@ -1,52 +1,184 @@
 #include <Adafruit_NeoPixel.h>
+#include <RotaryEncoder.h>
+#include <Adafruit_SH110X.h>
+#include <Keyboard.h>
+#include "marco.h"
+
+using namespace marco;
 
 class DisplayConfiguration {
   public:
-    virtual void render(*Adafruit_SH1106G sh1106g) = 0;
-}
-
-class OledDisplay {
-  public:
-    Adafruit_SH1106G display;
-    OledDisplay() {
-      display = Adafruit_SH1106G(128, 64, &SPI1, OLED_DC, OLED_RST, OLED_CS);
+    String headerText;
+    DisplayConfiguration(){};
+    DisplayConfiguration(String header) {
+      headerText = header;
     }
-    void refresh(DisplayConfiguration display_config) {
-      display.clearDisplay();
-      display.setCursor(0,0);
-      display.println(header_text);
-
-      dc.render(&display);
-
-      // display oled
-      display.display();
-    }
-  
-}
+};
 
 class Controller {
     public:
+      // Hardware components
       Key keys[12];
-      Adafruit_Neopixel pixels; // key LEDs
-      int encoder_pos;
+      Adafruit_NeoPixel pixels; // key LEDs
+      Adafruit_SH1106G* display;
+      marco::DisplayConfiguration dc;
+      RotaryEncoder* encoder;
+      // Trackers
+      int encoderPos;
       bool i2c_found[128];
-      string header_text;
-      // Create the rotary encoder
-      RotaryEncoder encoder(PIN_ROTA, PIN_ROTB, RotaryEncoder::LatchMode::FOUR3);
-      Controller(string header) {
+      bool pressed[12];
+      String headerText;
+      uint8_t iteration;
+      Controller() {}
+      Controller(marco::DisplayConfiguration* dconf) {
+        playStartupTone();
         // Create the neopixel strip with the built in definitions NUM_NEOPIXEL and PIN_NEOPIXEL
         pixels = Adafruit_NeoPixel(NUM_NEOPIXEL, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
-        // Create the OLED display
+        // start pixels!
+        pixels.begin();
+        pixels.setBrightness(255);
+        pixels.show(); // Initialize all pixels to 'off'
+
+        display = &Adafruit_SH1106G(128, 64, &SPI1, OLED_DC, OLED_RST, OLED_CS);
+        dc = *dconf;
+        setupDisplay();
+
+        Keyboard.begin();
+
+        // Create the rotary encoder
+        encoder = &RotaryEncoder(PIN_ROTA, PIN_ROTB, RotaryEncoder::LatchMode::FOUR3);
+        // set rotary encoder inputs and interrupts
+        pinMode(PIN_ROTA, INPUT_PULLUP);
+        pinMode(PIN_ROTB, INPUT_PULLUP);
+        attachInterrupt(digitalPinToInterrupt(PIN_ROTA), checkPosition, CHANGE);
+        attachInterrupt(digitalPinToInterrupt(PIN_ROTB), checkPosition, CHANGE);  
         
-        encoder_pos = encoder.getPosition();
-        header_text = header;
+        encoderPos = encoder.getPosition();
+
+        // set all mechanical keys to inputs
+        for (uint8_t i=0; i<=12; i++) {
+          pinMode(i, INPUT_PULLUP);
+        }
+
+        // We will use I2C for scanning the Stemma QT port
+        Wire.begin();
+        iteration = 0;
       }
       void refresh() { 
+        // Scanning takes a while so we don't do it all the time
+        if ((iteration & 0x3F) == 0) {
+          scanI2c();
+        }
+
+        refreshDisplay(dc);
+
         encoder.tick();          // check the encoder
-        encoder_pos = encoder.getPosition();
+        encoderPos = encoder.getPosition();
+
+        for(int i=0; i< pixels.numPixels(); i++) {
+          pixels.setPixelColor(i, Wheel(((i * 256 / pixels.numPixels()) + iteration) & 255));
+        }
+
+        for (int i=1; i<=12; i++) {
+          if (!digitalRead(i) && !pressed[i]) { // switch pressed!
+            pressed[i] = true;
+            Serial.print("Switch "); Serial.println(i);
+            pixels.setPixelColor(i-1, 0xFFFFFF);  // make white
+            // move the text into a 3x4 grid
+            display.setCursor(((i-1) % 3)*48, 32 + ((i-1)/3)*8);
+            display.print("KEY");
+            display.print(i);
+            char strokes[] = {KEY_DELETE};
+            size_t elems = 1;
+            sendKeyCombo(strokes, elems);
+          } else if (digitalRead(i)) {
+            pressed[i] = false;
+          }
+        }
+
         // show neopixels, increment swirl
         pixels.show();
-        
+        iteration++;
+      }
+    private:
+      void setupDisplay() {
+        // Start OLED
+        display.begin(0, true); // we dont use the i2c address but we will reset!
+        display.display();
+
+        // text display tests
+        display.setTextSize(1);
+        display.setTextWrap(false);
+        display.setTextColor(SH110X_WHITE, SH110X_BLACK); // white text, black background
+        headerText = header;
+      }
+      void refreshDisplay(marco::DisplayConfiguration dc) {
+        display.clearDisplay();
+        display.setCursor(0,0);
+        display.println(dc.headerText);
+
+        // check encoder press
+        display.setCursor(0, 24);
+        if (!digitalRead(PIN_SWITCH)) {
+          Serial.println("Encoder button");
+          display.print("Encoder pressed ");
+          pixels.setBrightness(255);     // bright!
+        } else {
+          pixels.setBrightness(80);
+        }
+
+        display.setCursor(0, 8);
+        display.print("Rotary encoder: ");
+        display.print(encoder_pos);
+
+        // display oled
+        display.display();
+      }
+      void sendKeyCombo(char keys[], size_t elems) {
+        for (int i = 0; i < elems; i++) {
+          Keyboard.press(keys[i]);
+          delay(100);
+        }
+        Keyboard.releaseAll();
+      }
+      void playStartupTone() {
+        // Enable speaker
+        pinMode(PIN_SPEAKER_ENABLE, OUTPUT);
+        digitalWrite(PIN_SPEAKER_ENABLE, HIGH);
+        // Play some tones
+        pinMode(PIN_SPEAKER, OUTPUT);
+        digitalWrite(PIN_SPEAKER, LOW);
+        tone(PIN_SPEAKER, 988, 100);  // tone1 - B5
+        delay(100);
+        tone(PIN_SPEAKER, 1319, 200); // tone2 - E6
+        delay(200);
+      }
+      void scanI2c() {
+        Serial.println("Scanning I2C: ");
+        Serial.print("Found I2C address 0x");
+        for (uint8_t address = 0; address <= 0x7F; address++) {
+          Wire.beginTransmission(address);
+          i2c_found[address] = (Wire.endTransmission () == 0);
+          if (i2c_found[address]) {
+            Serial.print("0x");
+            Serial.print(address, HEX);
+            Serial.print(", ");
+          }
+        }
+        Serial.println();
+      }
+      // Input a value 0 to 255 to get a color value.
+      // The colours are a transition r - g - b - back to r.
+      uint32_t Wheel(byte WheelPos) {
+        if(WheelPos < 85) {
+        return pixels.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+        } else if(WheelPos < 170) {
+        WheelPos -= 85;
+        return pixels.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+        } else {
+        WheelPos -= 170;
+        return pixels.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+        }
       }
 
-}
+};

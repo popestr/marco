@@ -1,3 +1,0 @@
-class Mode {
-    string 
-}
