@@ -14,6 +14,9 @@ class Marco {
       controller = new Controller(anp, ash, re, dconf);
       dc = dconf;
     }
+    ~Marco() {
+      delete controller;
+    }
     void refresh() {
       controller->refresh();
     }

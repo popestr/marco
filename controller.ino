@@ -6,15 +6,12 @@
 
 using namespace marco;
 
-void checkPosition(RotaryEncoder* re) {
-  re->tick();
-}
-
 // DisplayConfiguration implementation
 DisplayConfiguration::DisplayConfiguration(String header) {
     headerText = header;
 }
 
+// Controller implementation
 Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf) {
   pixels = npx;
   display = ash;
@@ -35,7 +32,7 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
   encoderPos = encoder->getPosition();
 
   // set all mechanical keys to inputs
-  for (uint8_t i=0; i<=12; i++) {
+  for (uint8_t i=0; i<12; i++) {
     pinMode(i, INPUT_PULLUP);
   }
 
@@ -44,10 +41,10 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
   iteration = 0;
 }
 void Controller::refresh() { 
-  // Scanning takes a while so we don't do it all the time
-  if ((iteration & 0x3F) == 0) {
-    scanI2c();
-  }
+  // // Scanning takes a while so we don't do it all the time
+  // if ((iteration & 0x3F) == 0) {
+  //   scanI2c();
+  // }
 
   refreshDisplay();
 
@@ -79,6 +76,13 @@ void Controller::refresh() {
   pixels->show();
   iteration++;
 }
+
+Controller::~Controller() {
+  delete display;
+  delete pixels;
+  delete encoder;
+}
+
 void Controller::setupDisplay() {
   // Start OLED
   display->begin(0, true); // we dont use the i2c address but we will reset!
@@ -99,7 +103,7 @@ void Controller::refreshDisplay() {
   if (!digitalRead(PIN_SWITCH)) {
     Serial.println("Encoder button");
     display->print("Encoder pressed ");
-    pixels->sright!
+    pixels->setBrightness(255);     // bright!
   } else {
     pixels->setBrightness(80);
   }

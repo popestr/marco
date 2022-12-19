@@ -8,7 +8,6 @@ namespace marco {
     public:
       bool pixels[64][128];
       String headerText;
-      DisplayConfiguration();
       DisplayConfiguration(String header);
   };
   class KeypressHandler {
@@ -17,17 +16,16 @@ namespace marco {
   };
   class Key {
     public:
-      int index;
+      uint8_t index;
       KeypressHandler *handler;
       uint32_t color;
       bool pressed;
       void press();
-      Key();
-      Key(KeypressHandler *h);
+      Key(uint8_t index, KeypressHandler *h);
   };
   class Controller {
     // Hardware components
-    Key keys[12];
+    Key* keys[12];
     Adafruit_NeoPixel *pixels; // key LEDs
     Adafruit_SH1106G *display;
     DisplayConfiguration *dc;
@@ -40,6 +38,7 @@ namespace marco {
     uint8_t iteration;
     public:
       Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf);
+      ~Controller();
       void refresh();
     private:
       void setupDisplay();

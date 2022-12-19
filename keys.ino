@@ -6,8 +6,8 @@ using namespace marco;
 void Key::press() {
   handler->handle();
 }
-Key::Key() {}
-Key::Key(KeypressHandler *h) {
+Key::Key(uint8_t idx, KeypressHandler *h) {
+  index = idx;
   handler = h;
 }
 
