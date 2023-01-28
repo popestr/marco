@@ -2,6 +2,7 @@
 #include <RotaryEncoder.h>
 #include <Adafruit_SH110X.h>
 #include <Keyboard.h>
+#include <Mouse.h>
 #include "marco.h"
 
 using namespace marco;
@@ -18,7 +19,7 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
   encoder = re;
   dc = dconf;
 
-  playStartupTone();
+  // playStartupTone();
   // Create the neopixel strip with the built in definitions NUM_NEOPIXEL and PIN_NEOPIXEL
   // start pixels!
   pixels->begin();
@@ -28,12 +29,33 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
   setupDisplay();
 
   Keyboard.begin();
+  Mouse.begin();
+
+  class SimpleDelete : public KeypressHandler {
+    void handle() {
+      Keyboard.press(KEY_RIGHT_ARROW);
+      delay(10);
+      Keyboard.releaseAll();
+      // Mouse.move(0,0,1);
+    }
+  };
+
+  // class ColorSet : public KeypressHandler {
+  //   void handle() {
+
+  //   }
+  //   ColorSet()
+  // }
+
+  KeypressHandler* sd = new SimpleDelete();
   
   encoderPos = encoder->getPosition();
 
   // set all mechanical keys to inputs
   for (uint8_t i=0; i<12; i++) {
-    pinMode(i, INPUT_PULLUP);
+    pinMode(i+1, INPUT_PULLUP);
+    keys[i] = new Key(i, sd);
+    keys[i]->color = 0xFFFFFF;
   }
 
   // We will use I2C for scanning the Stemma QT port
@@ -41,34 +63,41 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
   iteration = 0;
 }
 void Controller::refresh() { 
-  // // Scanning takes a while so we don't do it all the time
-  // if ((iteration & 0x3F) == 0) {
-  //   scanI2c();
-  // }
-
   refreshDisplay();
 
   encoder->tick();          // check the encoder
-  encoderPos = encoder->getPosition();
-
-  for(int i=0; i< pixels->numPixels(); i++) {
-    pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + iteration) & 255));
+  int tmp = encoder->getPosition();
+  if (tmp > encoderPos) {
+    Keyboard.press(KEY_UP_ARROW);
+    delay(10);
+    Keyboard.releaseAll();
+  } else if (tmp < encoderPos) {
+    Keyboard.press(KEY_DOWN_ARROW);
+    delay(10);
+    Keyboard.releaseAll();
   }
+  encoderPos = tmp;
 
-  for (int i=1; i<=12; i++) {
-    if (!digitalRead(i) && !pressed[i]) { // switch pressed!
+  // for(int i=0; i< pixels->numPixels(); i++) {
+  //   pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + iteration) & 255));
+  // }
+
+  for (int i=0; i<12; i++) {
+    if (!digitalRead(i+1) && !pressed[i]) { // switch pressed!
       pressed[i] = true;
       Serial.print("Switch "); Serial.println(i);
-      pixels->setPixelColor(i-1, 0xFFFFFF);  // make white
+      pixels->setPixelColor(i, keys[i]->color);  // make white
       // move the text into a 3x4 grid
-      display->setCursor(((i-1) % 3)*48, 32 + ((i-1)/3)*8);
+      display->setCursor((i % 3)*48, 32 + (i/3)*8);
       display->print("KEY");
-      display->print(i);
-      char strokes[] = {KEY_DELETE};
-      size_t elems = 1;
-      sendKeyCombo(strokes, elems);
-    } else if (digitalRead(i)) {
+      display->print(i+1);
+      // char strokes[] = {KEY_DELETE};
+      // size_t elems = 1;
+      // sendKeyCombo(strokes, elems);
+      keys[i]->press();
+    } else if (digitalRead(i+1)) {
       pressed[i] = false;
+      pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + iteration) & 255));
     }
   }
 
@@ -78,6 +107,8 @@ void Controller::refresh() {
 }
 
 Controller::~Controller() {
+  Keyboard.end();
+  Mouse.end();
   delete display;
   delete pixels;
   delete encoder;
@@ -85,7 +116,7 @@ Controller::~Controller() {
 
 void Controller::setupDisplay() {
   // Start OLED
-  display->begin(0, true); // we dont use the i2c address but we will reset!
+  display->begin();
   display->display();
 
   // text display tests
