@@ -4,8 +4,60 @@
 #include <Keyboard.h>
 #include <Mouse.h>
 #include "marco.h"
+#include <string>
+
+#define PROG_CLIPBOARD        0x0
+#define PRIME                 0x0001
+#define CANCEL_PRIME          0x0002
+#define REQUEST_CLIP          0x0003
+
+#define ARD_KEY_LED           0xF
+#define SET_COLOR             0x0001
+#define TURN_OFF              0x0002
+
+const unsigned int MAX_MESSAGE_LENGTH = 35;
+const unsigned int NUM_KEYS = 12;
 
 using namespace marco;
+
+class Clipboard : public Key {
+  public:
+    bool hasClip = false;
+    bool waitingForClip = false;
+
+    void press() {
+      if(!hasClip) {
+        waitingForClip = !waitingForClip;
+        if(waitingForClip){
+          setColor(0x28b531);
+          sendInstruction(PROG_CLIPBOARD, PRIME, index);
+        } else {
+          setColor(0);
+          sendInstruction(PROG_CLIPBOARD, CANCEL_PRIME, index);
+        }
+      } else {
+        // show clip on screen, send request to load clip
+        sendInstruction(PROG_CLIPBOARD, REQUEST_CLIP, index);
+      }
+    }
+    void handle(char instructionWithArgs[35]) {
+      Serial.print(F("delegated to key: ")); Serial.print(index); Serial.print(" ");
+      Instruction* i = new Instruction(instructionWithArgs);
+      switch (i->instructionCode) {
+        case ARD_KEY_LED:
+        {
+          const char* hexCode = i->additionalArgs.c_str();
+          color = naiveHexConversion(hexCode);
+          break;
+        }
+        default:
+          Serial.print(F("Unsupported instruction."));
+      }
+    }
+    Clipboard(uint8_t idx)
+    : Key(idx) {
+    }
+};
 
 // DisplayConfiguration implementation
 DisplayConfiguration::DisplayConfiguration(String header) {
@@ -30,39 +82,48 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
 
   Keyboard.begin();
   Mouse.begin();
-
-  class SimpleDelete : public KeypressHandler {
-    void handle() {
-      Keyboard.press(KEY_RIGHT_ARROW);
-      delay(10);
-      Keyboard.releaseAll();
-      // Mouse.move(0,0,1);
-    }
-  };
-
-  // class ColorSet : public KeypressHandler {
-  //   void handle() {
-
-  //   }
-  //   ColorSet()
-  // }
-
-  KeypressHandler* sd = new SimpleDelete();
   
   encoderPos = encoder->getPosition();
 
   // set all mechanical keys to inputs
-  for (uint8_t i=0; i<12; i++) {
+  for (uint8_t i=0; i<NUM_KEYS; i++) {
     pinMode(i+1, INPUT_PULLUP);
-    keys[i] = new Key(i, sd);
-    keys[i]->color = 0xFFFFFF;
+    keys[i] = new Clipboard(i);
   }
 
-  // We will use I2C for scanning the Stemma QT port
-  Wire.begin();
   iteration = 0;
 }
-void Controller::refresh() { 
+
+void Controller::consumeSerial() {
+  while(Serial.available() > 0) {
+    static char message[MAX_MESSAGE_LENGTH];
+    static unsigned int message_pos = 0;
+
+    char inByte = Serial.read();
+
+    //Message coming in (check not terminating character) and guard for over message size
+    if ( inByte != '\n' && (message_pos < MAX_MESSAGE_LENGTH - 1) )
+    {
+      //Add the incoming byte to our message
+      message[message_pos] = inByte;
+      message_pos++;
+    }
+    //Full message received...
+    else
+    {
+      //Add null character to string
+      message[message_pos] = '\0';
+      //Print the message (or do other things)
+      Serial.println(message);
+      delegateInstruction(message);
+      //Reset for the next message
+      message_pos = 0;
+    }
+  }
+}
+
+void Controller::refresh() {
+  consumeSerial();
   refreshDisplay();
 
   encoder->tick();          // check the encoder
@@ -78,14 +139,10 @@ void Controller::refresh() {
   }
   encoderPos = tmp;
 
-  // for(int i=0; i< pixels->numPixels(); i++) {
-  //   pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + iteration) & 255));
-  // }
-
-  for (int i=0; i<12; i++) {
+  for (int i=0; i<NUM_KEYS; i++) {
     if (!digitalRead(i+1) && !pressed[i]) { // switch pressed!
       pressed[i] = true;
-      Serial.print("Switch "); Serial.println(i);
+      keys[i]->press();
       pixels->setPixelColor(i, keys[i]->color);  // make white
       // move the text into a 3x4 grid
       display->setCursor((i % 3)*48, 32 + (i/3)*8);
@@ -94,10 +151,8 @@ void Controller::refresh() {
       // char strokes[] = {KEY_DELETE};
       // size_t elems = 1;
       // sendKeyCombo(strokes, elems);
-      keys[i]->press();
     } else if (digitalRead(i+1)) {
       pressed[i] = false;
-      pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + iteration) & 255));
     }
   }
 
@@ -124,6 +179,7 @@ void Controller::setupDisplay() {
   display->setTextWrap(false);
   display->setTextColor(SH110X_WHITE, SH110X_BLACK); // white text, black background
 }
+
 void Controller::refreshDisplay() {
   display->clearDisplay();
   display->setCursor(0,0);
@@ -132,20 +188,21 @@ void Controller::refreshDisplay() {
   // check encoder press
   display->setCursor(0, 24);
   if (!digitalRead(PIN_SWITCH)) {
-    Serial.println("Encoder button");
-    display->print("Encoder pressed ");
+    Serial.println(F("Encoder button"));
+    display->print(F("Encoder pressed "));
     pixels->setBrightness(255);     // bright!
   } else {
     pixels->setBrightness(80);
   }
 
   display->setCursor(0, 8);
-  display->print("Rotary encoder: ");
+  display->print(F("Rotary encoder: "));
   display->print(encoderPos);
 
   // display oled
   display->display();
 }
+
 void Controller::sendKeyCombo(char keys[], size_t elems) {
   for (int i = 0; i < elems; i++) {
     Keyboard.press(keys[i]);
@@ -153,6 +210,17 @@ void Controller::sendKeyCombo(char keys[], size_t elems) {
   }
   Keyboard.releaseAll();
 }
+
+void Controller::delegateInstruction(char instructionWithArgs[35]) {
+  char hexchar = instructionWithArgs[10];
+  int keyIndex = (hexchar >= 'A') ? (hexchar - 'A' + 10) : (hexchar - '0');
+  if(keyIndex < 0 || keyIndex > NUM_KEYS - 1) {
+    Serial.print(F("invalid key index: ")); Serial.println(keyIndex);
+    return;
+  }
+  keys[keyIndex]->handle(instructionWithArgs);
+}
+
 void Controller::playStartupTone() {
   // Enable speaker
   pinMode(PIN_SPEAKER_ENABLE, OUTPUT);
@@ -165,20 +233,7 @@ void Controller::playStartupTone() {
   tone(PIN_SPEAKER, 1319, 200); // tone2 - E6
   delay(200);
 }
-void Controller::scanI2c() {
-  Serial.println("Scanning I2C: ");
-  Serial.print("Found I2C address 0x");
-  for (uint8_t address = 0; address <= 0x7F; address++) {
-    Wire.beginTransmission(address);
-    i2c_found[address] = (Wire.endTransmission () == 0);
-    if (i2c_found[address]) {
-      Serial.print("0x");
-      Serial.print(address, HEX);
-      Serial.print(", ");
-    }
-  }
-  Serial.println();
-}
+
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
 uint32_t Controller::Wheel(byte WheelPos) {

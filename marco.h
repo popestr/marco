@@ -1,4 +1,5 @@
 #include <Adafruit_SH110X.h>
+#include <string>
 
 #ifndef _MARCO_H
 #define _MARCO_H
@@ -20,8 +21,10 @@ namespace marco {
       KeypressHandler *handler;
       uint32_t color;
       bool pressed;
-      void press();
-      Key(uint8_t index, KeypressHandler *h);
+      virtual void press();
+      virtual void handle(char instructionWithArgs[35]);
+      Key(uint8_t index);
+      void setColor(uint32_t);
   };
   class Controller {
     // Hardware components
@@ -32,22 +35,37 @@ namespace marco {
     RotaryEncoder *encoder;
     // Trackers
     int encoderPos;
-    bool i2c_found[128];
     bool pressed[12];
     String headerText;
     uint8_t iteration;
     public:
       Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf);
       ~Controller();
+      void consumeSerial();
       void refresh();
     private:
       void setupDisplay();
       void refreshDisplay();
       void sendKeyCombo(char keys[], size_t elems);
+      void delegateInstruction(char instructionWithArgs[35]);
       void playStartupTone();
-      void scanI2c();
       uint32_t Wheel(byte WheelPos);
   };
+  int hexCharToInt(char hexChar);
+  uint32_t naiveHexConversion(const char* hexCode);
+  class Instruction {
+    public:
+      uint8_t instructionCode;
+      uint8_t arg1;
+      uint8_t arg2;
+      uint8_t arg3;
+      std::string additionalArgs;
+      Instruction(char instructionWithArgs[35]);
+  };
+  void sendInstruction(uint16_t instructionCode, uint8_t arg1, uint8_t arg2, uint8_t arg3);
+  void sendInstruction(uint16_t instructionCode, uint8_t arg1, uint8_t arg2);
+  void sendInstruction(uint16_t instructionCode, uint8_t arg1);
+  void sendInstruction(uint16_t instructionCode);
 }
 
 #endif // _MARCO_H
