@@ -30,28 +30,33 @@ class Clipboard : public Key {
         waitingForClip = !waitingForClip;
         if(waitingForClip){
           setColor(0x28b531);
-          sendInstruction(PROG_CLIPBOARD, PRIME, index);
+          sendInstruction(PROG_CLIPBOARD, index, PRIME);
         } else {
           setColor(0);
-          sendInstruction(PROG_CLIPBOARD, CANCEL_PRIME, index);
+          sendInstruction(PROG_CLIPBOARD, index, CANCEL_PRIME);
         }
       } else {
         // show clip on screen, send request to load clip
-        sendInstruction(PROG_CLIPBOARD, REQUEST_CLIP, index);
+        sendInstruction(PROG_CLIPBOARD, index, REQUEST_CLIP);
       }
     }
-    void handle(char instructionWithArgs[35]) {
+    void handle(Instruction* i) {
       Serial.print(F("delegated to key: ")); Serial.print(index); Serial.print(" ");
-      Instruction* i = new Instruction(instructionWithArgs);
+      Serial.print("instruction code: "); Serial.println(i->instructionCode);
       switch (i->instructionCode) {
         case ARD_KEY_LED:
         {
           const char* hexCode = i->additionalArgs.c_str();
           color = naiveHexConversion(hexCode);
+          extern Marco* mc;
+          mc->controller->pixels->setPixelColor(index, color);
+          Serial.println(color);
           break;
         }
         default:
-          Serial.print(F("Unsupported instruction."));
+          Serial.print(F("\"")); 
+          Serial.print(i->instructionCode);
+          Serial.println(F("\" is an unsupported instruction."));
       }
     }
     Clipboard(uint8_t idx)
@@ -113,9 +118,12 @@ void Controller::consumeSerial() {
     {
       //Add null character to string
       message[message_pos] = '\0';
+      Instruction i(message, message_pos);
+      Serial.println(i.instructionCode); Serial.println(i.callerIndex);
+      Serial.println(i.additionalArgs.c_str());
       //Print the message (or do other things)
       Serial.println(message);
-      delegateInstruction(message);
+      delegateInstruction(&i);
       //Reset for the next message
       message_pos = 0;
     }
@@ -211,14 +219,12 @@ void Controller::sendKeyCombo(char keys[], size_t elems) {
   Keyboard.releaseAll();
 }
 
-void Controller::delegateInstruction(char instructionWithArgs[35]) {
-  char hexchar = instructionWithArgs[10];
-  int keyIndex = (hexchar >= 'A') ? (hexchar - 'A' + 10) : (hexchar - '0');
-  if(keyIndex < 0 || keyIndex > NUM_KEYS - 1) {
-    Serial.print(F("invalid key index: ")); Serial.println(keyIndex);
+void Controller::delegateInstruction(Instruction* i) {
+  if(i->callerIndex < 0 || i->callerIndex > NUM_KEYS - 1) {
+    Serial.print(F("invalid key index: ")); Serial.println(i->callerIndex);
     return;
   }
-  keys[keyIndex]->handle(instructionWithArgs);
+  keys[i->callerIndex]->handle(i);
 }
 
 void Controller::playStartupTone() {

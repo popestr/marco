@@ -7,23 +7,20 @@
 
 using namespace marco;
 
-class Marco {
-  public:
-    Controller* controller;
-    DisplayConfiguration* dc;
-    Marco(Adafruit_NeoPixel* anp, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf) {
-      controller = new Controller(anp, ash, re, dconf);
-      dc = dconf;
-    }
-    ~Marco() {
-      delete controller;
-    }
-    void refresh() {
-      controller->refresh();
-    }
-};
+Marco::Marco(){}
+Marco::Marco(Adafruit_NeoPixel* anp, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf) {
+  controller = new Controller(anp, ash, re, dconf);
+  dc = dconf;
+}
+Marco::~Marco() {
+  delete controller;
+}
+void Marco::refresh() {
+  controller->refresh();
+}
 
-Marco *mc;
+Marco* mc;
+// Marco mc;
 
 Adafruit_NeoPixel* pixels;
 Adafruit_SH1106G* display;
@@ -44,9 +41,12 @@ void setup() {
   pinMode(PIN_ROTA, INPUT_PULLUP);
   pinMode(PIN_ROTB, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(PIN_ROTA), checkPosition, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(PIN_ROTB), checkPosition, CHANGE);  
+  attachInterrupt(digitalPinToInterrupt(PIN_ROTB), checkPosition, CHANGE);
 
   mc = new Marco(pixels, display, ec, dc);
+
+  // Marco mc2(pixels, display, ec, dc);
+  // mc = mc2;
 }
 
 void loop() {

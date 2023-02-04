@@ -14,13 +14,22 @@ uint32_t marco::naiveHexConversion(const char* hexCode) {
   return output;
 }
 
-Instruction::Instruction(char instructionWithArgs[35]) {
-  instructionCode = hexCharToInt(instructionWithArgs[10]);
-  arg1 = hexCharToInt(instructionWithArgs[11]);
-  arg2 = hexCharToInt(instructionWithArgs[12]);
-  arg3 = hexCharToInt(instructionWithArgs[13]);
-  additionalArgs = std::string(&instructionWithArgs[14], 22);
+Instruction::Instruction(char instructionWithArgs[35], int actualLength) {
+  Serial.print("actual length: "); + Serial.println(actualLength);
+  if(actualLength >= 12) {
+    instructionCode = hexCharToInt(instructionWithArgs[8]);
+    callerIndex = hexCharToInt(instructionWithArgs[9]);
+    arg2 = hexCharToInt(instructionWithArgs[10]);
+    arg3 = hexCharToInt(instructionWithArgs[11]);
+    if(actualLength > 12){
+      additionalArgs = std::string(&instructionWithArgs[13], actualLength - 13);
+    }
+  } else {
+    Serial.println(F("Input string too short for Instruction."));
+  }
 }
+
+
 
 // sendInstruction builds a 16-bit program message to send to serial output.
 // instructionCode occupies the first byte
