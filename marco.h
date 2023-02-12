@@ -25,11 +25,14 @@ namespace marco {
       uint8_t arg3;
       std::string additionalArgs;
       Instruction(char instructionWithArgs[35], int actualLength);
+      Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2, uint8_t arg3);
+      Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2);
+      Instruction(uint8_t instructionCode, uint8_t callerIndex);
+      Instruction(uint8_t instructionCode);
+      uint16_t serialize();
+      void send();
+      void fsend(char* fmt);
   };
-  void sendInstruction(uint16_t instructionCode, uint8_t arg1, uint8_t arg2, uint8_t arg3);
-  void sendInstruction(uint16_t instructionCode, uint8_t arg1, uint8_t arg2);
-  void sendInstruction(uint16_t instructionCode, uint8_t arg1);
-  void sendInstruction(uint16_t instructionCode);
   class Key {
     public:
       uint8_t index;

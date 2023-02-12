@@ -26,18 +26,22 @@ class Clipboard : public Key {
     bool waitingForClip = false;
 
     void press() {
+      Instruction instruction(PROG_CLIPBOARD, index);
       if(!hasClip) {
         waitingForClip = !waitingForClip;
         if(waitingForClip){
           setColor(0x28b531);
-          sendInstruction(PROG_CLIPBOARD, index, PRIME);
+          instruction.arg2 = PRIME;
+          instruction.send();
         } else {
           setColor(0);
-          sendInstruction(PROG_CLIPBOARD, index, CANCEL_PRIME);
+          instruction.arg2 = CANCEL_PRIME;
+          instruction.send();
         }
       } else {
         // show clip on screen, send request to load clip
-        sendInstruction(PROG_CLIPBOARD, index, REQUEST_CLIP);
+        instruction.arg2 = REQUEST_CLIP;
+        instruction.send();
       }
     }
     void handle(Instruction* i) {
