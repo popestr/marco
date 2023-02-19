@@ -6,75 +6,136 @@
 #include "marco.h"
 #include <string>
 
-#define PROG_CLIPBOARD        0x0
-#define PRIME                 0x0001
-#define CANCEL_PRIME          0x0002
-#define REQUEST_CLIP          0x0003
+#define PROG_CLIPBOARD 0x0
+#define PRIME 0x0001
+#define CANCEL_PRIME 0x0002
+#define REQUEST_CLIP 0x0003
 
-#define ARD_KEY_LED           0xF
-#define SET_COLOR             0x0001
-#define TURN_OFF              0x0002
+#define ARD_KEY_LED 0xF
+#define SET_COLOR 0x0001
+#define TURN_OFF 0x0002
 
-const unsigned int MAX_MESSAGE_LENGTH = 35;
-const unsigned int NUM_KEYS = 12;
+#define OLED_DISPLAY 0xE
+#define CLEAR 0x0000
+#define RAWTEXT 0x0001
 
 using namespace marco;
 
-class Clipboard : public Key {
-  public:
-    bool hasClip = false;
-    bool waitingForClip = false;
+class Clipboard : public Key
+{
+public:
+  bool hasClip = false;
+  bool waitingForClip = false;
 
-    void press() {
-      Instruction instruction(PROG_CLIPBOARD, index);
-      if(!hasClip) {
-        waitingForClip = !waitingForClip;
-        if(waitingForClip){
-          setColor(0x28b531);
-          instruction.arg2 = PRIME;
-          instruction.send();
-        } else {
-          setColor(0);
-          instruction.arg2 = CANCEL_PRIME;
-          instruction.send();
-        }
-      } else {
-        // show clip on screen, send request to load clip
-        instruction.arg2 = REQUEST_CLIP;
+  void press()
+  {
+    Instruction instruction(PROG_CLIPBOARD, index);
+    if (!hasClip)
+    {
+      waitingForClip = !waitingForClip;
+      if (waitingForClip)
+      {
+        setColor(0x28b531);
+        instruction.arg2 = PRIME;
+        instruction.send();
+      }
+      else
+      {
+        setColor(0);
+        instruction.arg2 = CANCEL_PRIME;
         instruction.send();
       }
     }
-    void handle(Instruction* i) {
-      Serial.print(F("delegated to key: ")); Serial.print(index); Serial.print(" ");
-      Serial.print("instruction code: "); Serial.println(i->instructionCode);
-      switch (i->instructionCode) {
-        case ARD_KEY_LED:
-        {
-          const char* hexCode = i->additionalArgs.c_str();
-          color = naiveHexConversion(hexCode);
-          extern Marco* mc;
-          mc->controller->pixels->setPixelColor(index, color);
-          Serial.println(color);
-          break;
-        }
-        default:
-          Serial.print(F("\"")); 
-          Serial.print(i->instructionCode);
-          Serial.println(F("\" is an unsupported instruction."));
+    else
+    {
+      // show clip on screen, send request to load clip
+      instruction.arg2 = REQUEST_CLIP;
+      instruction.send();
+    }
+  }
+  void handle(Instruction *i)
+  {
+    Serial.print(F("delegated to key: "));
+    Serial.print(index);
+    Serial.print(" ");
+    Serial.print("instruction code: ");
+    Serial.println(i->instructionCode);
+    switch (i->instructionCode)
+    {
+    case ARD_KEY_LED:
+    {
+      const char *hexCode = i->additionalArgs.c_str();
+      color = naiveHexConversion(hexCode);
+      extern Controller *mothership;
+      mothership->pixels->setPixelColor(index, color);
+      break;
+    }
+    case OLED_DISPLAY:
+    {
+      extern Controller *mothership;
+      switch (i->arg3)
+      {
+      case RAWTEXT:
+        mothership->dc->setText(i->additionalArgs);
       }
+      break;
     }
-    Clipboard(uint8_t idx)
-    : Key(idx) {
+    default:
+      Serial.print(F("\""));
+      Serial.print(i->instructionCode);
+      Serial.println(F("\" is an unsupported instruction."));
     }
+  }
+  Clipboard(uint8_t idx)
+      : Key(idx)
+  {
+  }
 };
 
 // DisplayConfiguration implementation
-DisplayConfiguration::DisplayConfiguration(String header) {
-    headerText = header;
+DisplayConfiguration::DisplayConfiguration(std::string header)
+{
+  headerText = header;
+}
+
+// DisplayConfiguration implementation
+DisplayConfiguration::DisplayConfiguration(std::string header, std::string text)
+{
+  headerText = header;
+  for (int lineNo = 0; lineNo < 7; lineNo++)
+  {
+    lines[lineNo] = std::string();
+  }
+  setText(text);
+}
+
+void DisplayConfiguration::clear()
+{
+  for (int lineNo = 0; lineNo < 7; lineNo++)
+  {
+    lines[lineNo].erase();
+  }
+}
+
+void DisplayConfiguration::setText(std::string text)
+{
+  size_t length = text.length();
+  int lineNo = 0;
+  for (size_t i = 0; i < length; i += MAX_DISPLAY_TEXT_WIDTH)
+  {
+    lines[lineNo] = std::string(&text[i], std::min(MAX_DISPLAY_TEXT_WIDTH, int(length - i)));
+    lineNo++;
+  }
+}
+
+void DisplayConfiguration::setTextLine(std::string text, uint8_t lineNo)
+{
+  lines[lineNo] = std::string(&text[0], std::min(MAX_DISPLAY_TEXT_WIDTH, int(text.length())));
 }
 
 // Controller implementation
-Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEncoder* re, DisplayConfiguration* dconf) {
+Controller::Controller(Adafruit_NeoPixel *npx, Adafruit_SH1106G *ash, RotaryEncoder *re, DisplayConfiguration *dconf)
+{
   pixels = npx;
   display = ash;
   encoder = re;
@@ -91,79 +152,90 @@ Controller::Controller(Adafruit_NeoPixel* npx, Adafruit_SH1106G* ash, RotaryEnco
 
   Keyboard.begin();
   Mouse.begin();
-  
+
   encoderPos = encoder->getPosition();
 
   // set all mechanical keys to inputs
-  for (uint8_t i=0; i<NUM_KEYS; i++) {
-    pinMode(i+1, INPUT_PULLUP);
+  for (uint8_t i = 0; i < NUM_KEYS; i++)
+  {
+    pinMode(i + 1, INPUT_PULLUP);
     keys[i] = new Clipboard(i);
   }
 
   iteration = 0;
 }
 
-void Controller::consumeSerial() {
-  while(Serial.available() > 0) {
+void Controller::consumeSerial()
+{
+  while (Serial.available() > 0)
+  {
     static char message[MAX_MESSAGE_LENGTH];
     static unsigned int message_pos = 0;
 
     char inByte = Serial.read();
 
-    //Message coming in (check not terminating character) and guard for over message size
-    if ( inByte != '\n' && (message_pos < MAX_MESSAGE_LENGTH - 1) )
+    // Message coming in (check not terminating character) and guard for over message size
+    if (inByte != '\n' && (message_pos < MAX_MESSAGE_LENGTH - 1))
     {
-      //Add the incoming byte to our message
+      // Add the incoming byte to our message
       message[message_pos] = inByte;
       message_pos++;
     }
-    //Full message received...
+    // Full message received...
     else
     {
-      //Add null character to string
+      // Add null character to string
       message[message_pos] = '\0';
       Instruction i(message, message_pos);
-      Serial.println(i.instructionCode); Serial.println(i.callerIndex);
+      Serial.println(i.instructionCode);
+      Serial.println(i.callerIndex);
       Serial.println(i.additionalArgs.c_str());
-      //Print the message (or do other things)
       Serial.println(message);
       delegateInstruction(&i);
-      //Reset for the next message
+      // Reset for the next message
       message_pos = 0;
     }
   }
 }
 
-void Controller::refresh() {
+void Controller::refresh()
+{
   consumeSerial();
   refreshDisplay();
 
-  encoder->tick();          // check the encoder
+  encoder->tick(); // check the encoder
   int tmp = encoder->getPosition();
-  if (tmp > encoderPos) {
+  if (tmp > encoderPos)
+  {
     Keyboard.press(KEY_UP_ARROW);
     delay(10);
     Keyboard.releaseAll();
-  } else if (tmp < encoderPos) {
+  }
+  else if (tmp < encoderPos)
+  {
     Keyboard.press(KEY_DOWN_ARROW);
     delay(10);
     Keyboard.releaseAll();
   }
   encoderPos = tmp;
 
-  for (int i=0; i<NUM_KEYS; i++) {
-    if (!digitalRead(i+1) && !pressed[i]) { // switch pressed!
+  for (int i = 0; i < NUM_KEYS; i++)
+  {
+    if (!digitalRead(i + 1) && !pressed[i])
+    { // switch pressed!
       pressed[i] = true;
       keys[i]->press();
-      pixels->setPixelColor(i, keys[i]->color);  // make white
+      pixels->setPixelColor(i, keys[i]->color); // make white
       // move the text into a 3x4 grid
-      display->setCursor((i % 3)*48, 32 + (i/3)*8);
+      display->setCursor((i % 3) * 48, 32 + (i / 3) * 8);
       display->print("KEY");
-      display->print(i+1);
+      display->print(i + 1);
       // char strokes[] = {KEY_DELETE};
       // size_t elems = 1;
       // sendKeyCombo(strokes, elems);
-    } else if (digitalRead(i+1)) {
+    }
+    else if (digitalRead(i + 1))
+    {
       pressed[i] = false;
     }
   }
@@ -173,7 +245,8 @@ void Controller::refresh() {
   iteration++;
 }
 
-Controller::~Controller() {
+Controller::~Controller()
+{
   Keyboard.end();
   Mouse.end();
   delete display;
@@ -181,7 +254,8 @@ Controller::~Controller() {
   delete encoder;
 }
 
-void Controller::setupDisplay() {
+void Controller::setupDisplay()
+{
   // Start OLED
   display->begin();
   display->display();
@@ -192,53 +266,66 @@ void Controller::setupDisplay() {
   display->setTextColor(SH110X_WHITE, SH110X_BLACK); // white text, black background
 }
 
-void Controller::refreshDisplay() {
+void Controller::refreshDisplay()
+{
   display->clearDisplay();
-  display->setCursor(0,0);
-  display->println(dc->headerText);
-
-  // check encoder press
-  display->setCursor(0, 24);
-  if (!digitalRead(PIN_SWITCH)) {
-    Serial.println(F("Encoder button"));
-    display->print(F("Encoder pressed "));
-    pixels->setBrightness(255);     // bright!
-  } else {
-    pixels->setBrightness(80);
+  display->setCursor(0, 0);
+  display->println(dc->headerText.c_str());
+  for (int i = 0; i < 7; i++)
+  {
+    display->println(dc->lines[i].c_str());
   }
+  // // check encoder press
+  // display->setCursor(0, 24);
+  // if (!digitalRead(PIN_SWITCH))
+  // {
+  //   Serial.println(F("Encoder button"));
+  //   display->print(F("Encoder pressed "));
+  //   pixels->setBrightness(255); // bright!
+  // }
+  // else
+  // {
+  //   pixels->setBrightness(80);
+  // }
 
-  display->setCursor(0, 8);
-  display->print(F("Rotary encoder: "));
-  display->print(encoderPos);
+  // display->setCursor(0, 8);
+  // display->print(F("Rotary encoder: "));
+  // display->print(encoderPos);
 
   // display oled
   display->display();
 }
 
-void Controller::sendKeyCombo(char keys[], size_t elems) {
-  for (int i = 0; i < elems; i++) {
+void Controller::sendKeyCombo(char keys[], size_t elems)
+{
+  for (int i = 0; i < elems; i++)
+  {
     Keyboard.press(keys[i]);
     delay(100);
   }
   Keyboard.releaseAll();
 }
 
-void Controller::delegateInstruction(Instruction* i) {
-  if(i->callerIndex < 0 || i->callerIndex > NUM_KEYS - 1) {
-    Serial.print(F("invalid key index: ")); Serial.println(i->callerIndex);
+void Controller::delegateInstruction(Instruction *i)
+{
+  if (i->callerIndex < 0 || i->callerIndex > NUM_KEYS - 1)
+  {
+    Serial.print(F("invalid key index: "));
+    Serial.println(i->callerIndex);
     return;
   }
   keys[i->callerIndex]->handle(i);
 }
 
-void Controller::playStartupTone() {
+void Controller::playStartupTone()
+{
   // Enable speaker
   pinMode(PIN_SPEAKER_ENABLE, OUTPUT);
   digitalWrite(PIN_SPEAKER_ENABLE, HIGH);
   // Play some tones
   pinMode(PIN_SPEAKER, OUTPUT);
   digitalWrite(PIN_SPEAKER, LOW);
-  tone(PIN_SPEAKER, 988, 100);  // tone1 - B5
+  tone(PIN_SPEAKER, 988, 100); // tone1 - B5
   delay(100);
   tone(PIN_SPEAKER, 1319, 200); // tone2 - E6
   delay(200);
@@ -246,14 +333,20 @@ void Controller::playStartupTone() {
 
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
-uint32_t Controller::Wheel(byte WheelPos) {
-  if(WheelPos < 85) {
-  return pixels->Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  } else if(WheelPos < 170) {
-  WheelPos -= 85;
-  return pixels->Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  } else {
-  WheelPos -= 170;
-  return pixels->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+uint32_t Controller::Wheel(byte WheelPos)
+{
+  if (WheelPos < 85)
+  {
+    return pixels->Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  else if (WheelPos < 170)
+  {
+    WheelPos -= 85;
+    return pixels->Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  else
+  {
+    WheelPos -= 170;
+    return pixels->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
   }
 }

@@ -5,35 +5,45 @@ using namespace marco;
 // #define INSTRUCTION_START_INDEX = 3
 // #define APPROVED_CLIENT = 0xbf00
 
-int marco::hexCharToInt(char hexchar) {
+int marco::hexCharToInt(char hexchar)
+{
   // if ascii ordering changes, we're fucked :(
   return (hexchar >= 'A') ? (hexchar - 'A' + 10) : (hexchar - '0');
 }
 
-uint32_t marco::naiveHexConversion(const char* hexCode) {
-  uint32_t output = 0x0;
-  for(uint8_t i=0; i < 6; i++) {
-    output = output | (hexCharToInt(hexCode[i]) << (4*i));
+uint16_t marco::naiveHexConversion(const char *hexCode)
+{
+  uint16_t output = 0x0;
+  for (uint8_t i = 0; i < 6; i++)
+  {
+    output = output | (hexCharToInt(hexCode[i]) << (4 * i));
   }
   return output;
 }
 
-Instruction::Instruction(char instructionWithArgs[35], int actualLength) {
-  Serial.print("actual length: "); + Serial.println(actualLength);
-  if(actualLength >= 12) {
+Instruction::Instruction(char instructionWithArgs[165], int actualLength)
+{
+  Serial.print("actual length: ");
+  +Serial.println(actualLength);
+  if (actualLength >= 12)
+  {
     instructionCode = hexCharToInt(instructionWithArgs[8]);
     callerIndex = hexCharToInt(instructionWithArgs[9]);
     arg2 = hexCharToInt(instructionWithArgs[10]);
     arg3 = hexCharToInt(instructionWithArgs[11]);
-    if(actualLength > 12){
+    if (actualLength > 12)
+    {
       additionalArgs = std::string(&instructionWithArgs[13], actualLength - 13);
     }
-  } else {
+  }
+  else
+  {
     Serial.println(F("Input string too short for Instruction."));
   }
 }
 
-Instruction::Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2, uint8_t arg3) {
+Instruction::Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2, uint8_t arg3)
+{
   this->instructionCode = instructionCode;
   this->callerIndex = callerIndex;
   this->arg2 = arg2;
@@ -41,35 +51,33 @@ Instruction::Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t a
 }
 
 Instruction::Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2)
-: Instruction(instructionCode, callerIndex, arg2, 0) {}
+    : Instruction(instructionCode, callerIndex, arg2, 0) {}
 
 Instruction::Instruction(uint8_t instructionCode, uint8_t callerIndex)
-: Instruction(instructionCode, callerIndex, 0, 0) {}
+    : Instruction(instructionCode, callerIndex, 0, 0) {}
 
 Instruction::Instruction(uint8_t instructionCode)
-: Instruction(instructionCode, 0, 0, 0) {}
+    : Instruction(instructionCode, 0, 0, 0) {}
 
-uint16_t Instruction::serialize() {
-  return 
-    instructionCode       << 4*3 
-  | callerIndex           << 4*2
-  | arg2                  << 4
-  | arg3;
+uint16_t Instruction::serialize()
+{
+  return instructionCode << 4 * 3 | callerIndex << 4 * 2 | arg2 << 4 | arg3;
 }
 
-void Instruction::send() {
+void Instruction::send()
+{
   Serial.print(this->serialize());
 }
 
 // "%.4X" as fmt for 4-bit hex.
-void Instruction::fsend(char* fmt) {
+void Instruction::fsend(char *fmt)
+{
   char formatted[4];
   uint16_t fullInstruction = (instructionCode & 0xF000) | ((callerIndex & 0xF) << 8) | ((arg2 & 0xF) << 4) | (arg3 & 0xF);
 
   sprintf(formatted, fmt, fullInstruction);
-  
+
   Serial.print("[ARD::0x");
   Serial.print(formatted);
   Serial.println("]");
 }
-
