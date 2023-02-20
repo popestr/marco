@@ -18,6 +18,10 @@
 #define OLED_DISPLAY 0xE
 #define CLEAR 0x0000
 #define RAWTEXT 0x0001
+#define SETTEXT
+
+#define TEXT_COLOR_NORMAL 0x0
+#define TEXT_COLOR_INVERTED 0x0001
 
 using namespace marco;
 
@@ -76,7 +80,7 @@ public:
       switch (i->arg3)
       {
       case RAWTEXT:
-        mothership->dc->setText(i->additionalArgs);
+        mothership->dc->setText(i->additionalArgs, i->arg1 > 0, i->arg2);
       }
       break;
     }
@@ -92,45 +96,67 @@ public:
   }
 };
 
+DisplayRow::DisplayRow()
+{
+  this->text = std::string();
+  this->inverted = false;
+}
+
+DisplayRow::DisplayRow(std::string text, bool inverted)
+{
+  this->text = text;
+  this->inverted = inverted;
+}
+
 // DisplayConfiguration implementation
 DisplayConfiguration::DisplayConfiguration(std::string header)
 {
-  headerText = header;
+  lines[0] = DisplayRow(header, true);
+  for (int lineNo = 1; lineNo < MAX_DISPLAY_TEXT_ROWS; lineNo++)
+  {
+    lines[lineNo] = DisplayRow();
+  }
 }
 
 // DisplayConfiguration implementation
 DisplayConfiguration::DisplayConfiguration(std::string header, std::string text)
+    : DisplayConfiguration(header)
 {
-  headerText = header;
-  for (int lineNo = 0; lineNo < 7; lineNo++)
-  {
-    lines[lineNo] = std::string();
-  }
-  setText(text);
+  setText(text, false, 0);
 }
 
 void DisplayConfiguration::clear()
 {
-  for (int lineNo = 0; lineNo < 7; lineNo++)
+  for (int lineNo = 0; lineNo < MAX_DISPLAY_TEXT_ROWS; lineNo++)
   {
-    lines[lineNo].erase();
+    lines[lineNo].text.erase();
   }
 }
 
-void DisplayConfiguration::setText(std::string text)
+void DisplayConfiguration::setText(std::string text, bool inverted, int lineNo)
 {
-  size_t length = text.length();
-  int lineNo = 0;
-  for (size_t i = 0; i < length; i += MAX_DISPLAY_TEXT_WIDTH)
+  size_t actualLength = text.length();
+  int length = std::min(MAX_DISPLAY_TEXT_ROWS * MAX_DISPLAY_TEXT_WIDTH, int(actualLength));
+
+  if (lineNo > MAX_DISPLAY_TEXT_ROWS - 1)
   {
-    lines[lineNo] = std::string(&text[i], std::min(MAX_DISPLAY_TEXT_WIDTH, int(length - i)));
+    lineNo = MAX_DISPLAY_TEXT_ROWS - 1;
+  }
+  else if (lineNo < 0)
+  {
+    lineNo = 0;
+  }
+
+  for (int i = 0; i < length; i += MAX_DISPLAY_TEXT_WIDTH)
+  {
+    if (lineNo >= MAX_DISPLAY_TEXT_ROWS)
+    {
+      break;
+    }
+    lines[lineNo].text = std::string(&text[i], std::min(MAX_DISPLAY_TEXT_WIDTH, int(length - i)));
+    lines[lineNo].inverted = inverted;
     lineNo++;
   }
-}
-
-void DisplayConfiguration::setTextLine(std::string text, uint8_t lineNo)
-{
-  lines[lineNo] = std::string(&text[0], std::min(MAX_DISPLAY_TEXT_WIDTH, int(text.length())));
 }
 
 // Controller implementation
@@ -188,7 +214,7 @@ void Controller::consumeSerial()
       message[message_pos] = '\0';
       Instruction i(message, message_pos);
       Serial.println(i.instructionCode);
-      Serial.println(i.callerIndex);
+      Serial.println(i.arg1);
       Serial.println(i.additionalArgs.c_str());
       Serial.println(message);
       delegateInstruction(&i);
@@ -270,10 +296,17 @@ void Controller::refreshDisplay()
 {
   display->clearDisplay();
   display->setCursor(0, 0);
-  display->println(dc->headerText.c_str());
-  for (int i = 0; i < 7; i++)
+  for (int i = 0; i < MAX_DISPLAY_TEXT_ROWS; i++)
   {
-    display->println(dc->lines[i].c_str());
+    if (dc->lines[i].inverted)
+    {
+      display->setTextColor(SH110X_BLACK, SH110X_WHITE);
+    }
+    else
+    {
+      display->setTextColor(SH110X_WHITE, SH110X_BLACK);
+    }
+    display->println(dc->lines[i].text.c_str());
   }
   // // check encoder press
   // display->setCursor(0, 24);
@@ -308,13 +341,13 @@ void Controller::sendKeyCombo(char keys[], size_t elems)
 
 void Controller::delegateInstruction(Instruction *i)
 {
-  if (i->callerIndex < 0 || i->callerIndex > NUM_KEYS - 1)
+  if (i->arg1 < 0 || i->arg1 > NUM_KEYS - 1)
   {
     Serial.print(F("invalid key index: "));
-    Serial.println(i->callerIndex);
+    Serial.println(i->arg1);
     return;
   }
-  keys[i->callerIndex]->handle(i);
+  keys[i->arg1]->handle(i);
 }
 
 void Controller::playStartupTone()

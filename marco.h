@@ -7,19 +7,26 @@
 #define MAX_MESSAGE_LENGTH 160
 #define NUM_KEYS 12
 #define MAX_DISPLAY_TEXT_WIDTH 21
+#define MAX_DISPLAY_TEXT_ROWS 8
 
 namespace marco
 {
+  class DisplayRow
+  {
+  public:
+    std::string text;
+    bool inverted;
+    DisplayRow(std::string text, bool inverted);
+    DisplayRow();
+  };
   class DisplayConfiguration
   {
   public:
-    std::string lines[7];
-    std::string headerText;
+    DisplayRow lines[9];
     DisplayConfiguration(std::string header);
     DisplayConfiguration(std::string header, std::string text);
     void clear();
-    void setText(std::string text);
-    void setTextLine(std::string text, uint8_t lineNo);
+    void setText(std::string text, bool inverted, int lineNo);
   };
   class KeypressHandler
   {
@@ -32,14 +39,14 @@ namespace marco
   {
   public:
     uint8_t instructionCode;
-    uint8_t callerIndex;
+    uint8_t arg1;
     uint8_t arg2;
     uint8_t arg3;
     std::string additionalArgs;
     Instruction(char instructionWithArgs[MAX_MESSAGE_LENGTH], int actualLength);
-    Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2, uint8_t arg3);
-    Instruction(uint8_t instructionCode, uint8_t callerIndex, uint8_t arg2);
-    Instruction(uint8_t instructionCode, uint8_t callerIndex);
+    Instruction(uint8_t instructionCode, uint8_t arg1, uint8_t arg2, uint8_t arg3);
+    Instruction(uint8_t instructionCode, uint8_t arg1, uint8_t arg2);
+    Instruction(uint8_t instructionCode, uint8_t arg1);
     Instruction(uint8_t instructionCode);
     uint16_t serialize();
     void send();
