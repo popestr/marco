@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 
@@ -15,6 +18,8 @@ import (
 )
 
 const (
+	NUM_KEYS = 12
+
 	CLIPBOARD              = 0x0
 	CLIPBOARD_PRIME        = 0x1
 	CLIPBOARD_CANCEL_PRIME = 0x2
@@ -79,7 +84,8 @@ func (i *Instruction) serialize() []byte {
 }
 
 var (
-	port serial.Port
+	port             serial.Port
+	clipboardManager *ClipboardManager
 )
 
 func sendSerial(message []byte) error {
@@ -114,13 +120,106 @@ func setOledText(lineNo byte, inverted byte, text string) error {
 	return sendSerial(textSend.serialize())
 }
 
+type Clipboard struct {
+	filepath string
+	value    string
+}
+
+type ClipboardManager struct {
+	clipboards [NUM_KEYS]*Clipboard
+}
+
+func NewClipboardManager(directory string) *ClipboardManager {
+	result := &ClipboardManager{
+		clipboards: [NUM_KEYS]*Clipboard{},
+	}
+	err := createDirIfNotExists(directory)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for i := 0; i < NUM_KEYS; i++ {
+		filepath := directory + "-clipboard" + fmt.Sprint(i) + ".txt"
+		if err != nil {
+			log.Fatal(err)
+		}
+		result.clipboards[i] = &Clipboard{
+			filepath: filepath,
+		}
+	}
+	return result
+}
+
+func (cm *ClipboardManager) setClip(index int) error {
+	if index < 0 || index > NUM_KEYS-1 {
+		return fmt.Errorf("index %d out of bounds", index)
+	}
+	if cm.clipboards[index].filepath == "" {
+		return fmt.Errorf("clipboard %d has no path", index)
+	}
+
+	file, err := openOrCreate(cm.clipboards[index].filepath)
+	if err != nil {
+		return err
+	}
+
+	clipboardContents, err := clipboard.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write([]byte(clipboardContents))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cm *ClipboardManager) getClip(index int) (string, error) {
+	if index < 0 || index > NUM_KEYS-1 {
+		return "", fmt.Errorf("index %d out of bounds", index)
+	}
+	if cm.clipboards[index].filepath == "" {
+		return "", fmt.Errorf("clipboard %d has no path", index)
+	}
+	file, err := os.Open(cm.clipboards[index].filepath)
+	if err != nil {
+		return "", err
+	}
+	buf := bytes.NewBuffer(nil)
+	_, err = io.Copy(buf, file)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), file.Close()
+}
+
+func createDirIfNotExists(path string) error {
+	if stat, err := os.Stat(path); os.IsNotExist(err) {
+		return os.Mkdir(path, os.ModePerm)
+	} else if err != nil {
+		return err
+	} else if !stat.IsDir() {
+		return fmt.Errorf("path %s exists but is not a directory", path)
+	}
+	// directory already exists
+	return nil
+}
+
+func openOrCreate(path string) (*os.File, error) {
+	if stat, err := os.Stat(path); os.IsNotExist(err) {
+		return os.Create(path)
+	} else if stat.IsDir() {
+		return nil, fmt.Errorf("path %s exists but is a directory", path)
+	}
+	return os.Open(path)
+}
+
 func delegate(i *Instruction) error {
 	switch i.instructionCode {
 	case CLIPBOARD:
 		switch i.arg2 {
 		case CLIPBOARD_PRIME:
 			setKeyColor(i.arg1, "ffffff")
-			break
 		case CLIPBOARD_CANCEL_PRIME:
 			setKeyColor(i.arg1, "000000")
 			clip, err := clipboard.ReadAll()
@@ -128,7 +227,6 @@ func delegate(i *Instruction) error {
 				return err
 			}
 			setOledText(1, 0, clip)
-			break
 		case CLIPBOARD_REQUEST_CLIP:
 			clip, err := clipboard.ReadAll()
 			if err != nil {
@@ -136,7 +234,6 @@ func delegate(i *Instruction) error {
 			}
 			setOledText(1, 0, clip)
 		}
-		break
 	}
 	return nil
 }
