@@ -17,8 +17,7 @@
 
 #define OLED_DISPLAY 0xE
 #define CLEAR 0x0000
-#define RAWTEXT 0x0001
-#define SETTEXT
+#define SETTEXT 0x0001
 
 #define TEXT_COLOR_NORMAL 0x0
 #define TEXT_COLOR_INVERTED 0x0001
@@ -41,29 +40,26 @@ public:
       {
         setColor(0x28b531);
         instruction.arg2 = PRIME;
-        instruction.send();
       }
       else
       {
         setColor(0);
         instruction.arg2 = CANCEL_PRIME;
-        instruction.send();
       }
     }
     else
     {
-      // show clip on screen, send request to load clip
       instruction.arg2 = REQUEST_CLIP;
-      instruction.send();
     }
+    instruction.send();
   }
   void handle(Instruction *i)
   {
-    Serial.print(F("delegated to key: "));
-    Serial.print(index);
-    Serial.print(" ");
-    Serial.print("instruction code: ");
-    Serial.println(i->instructionCode);
+    // Serial.print(F("delegated to key: "));
+    // Serial.print(index);
+    // Serial.print(" ");
+    // Serial.print("instruction code: ");
+    // Serial.println(i->instructionCode);
     switch (i->instructionCode)
     {
     case ARD_KEY_LED:
@@ -79,8 +75,12 @@ public:
       extern Controller *mothership;
       switch (i->arg3)
       {
-      case RAWTEXT:
+      case CLEAR:
+        mothership->dc->clear();
+        break;
+      case SETTEXT:
         mothership->dc->setText(i->additionalArgs, i->arg1 > 0, i->arg2);
+        break;
       }
       break;
     }

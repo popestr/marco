@@ -4,7 +4,7 @@
 #ifndef _MARCO_H
 #define _MARCO_H
 
-#define MAX_MESSAGE_LENGTH 160
+#define MAX_MESSAGE_LENGTH 165
 #define NUM_KEYS 12
 #define MAX_DISPLAY_TEXT_WIDTH 21
 #define MAX_DISPLAY_TEXT_ROWS 8
@@ -16,8 +16,9 @@ namespace marco
   public:
     std::string text;
     bool inverted;
-    DisplayRow(std::string text, bool inverted);
     DisplayRow();
+    DisplayRow(std::string text, bool inverted);
+    DisplayRow(std::string text, bool inverted, bool selectable);
   };
   class DisplayConfiguration
   {
@@ -34,7 +35,7 @@ namespace marco
     virtual void handle();
   };
   int hexCharToInt(char hexChar);
-  uint16_t naiveHexConversion(const char *hexCode);
+  uint32_t naiveHexConversion(const char *hexCode);
   class Instruction
   {
   public:
@@ -50,7 +51,7 @@ namespace marco
     Instruction(uint8_t instructionCode);
     uint16_t serialize();
     void send();
-    void fsend(char *fmt);
+    void sendf(char *fmt);
   };
   class Key
   {

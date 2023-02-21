@@ -11,17 +11,19 @@ int marco::hexCharToInt(char hexchar)
   return (hexchar >= 'A') ? (hexchar - 'A' + 10) : (hexchar - '0');
 }
 
-uint16_t marco::naiveHexConversion(const char *hexCode)
+uint32_t marco::naiveHexConversion(const char *hexCode)
 {
-  uint16_t output = 0x0;
+  uint32_t output = 0x0;
   for (uint8_t i = 0; i < 6; i++)
   {
     output = output | (hexCharToInt(hexCode[i]) << (4 * i));
   }
-  return output;
+  Serial.print("hex converted to: ");
+  Serial.println(output & 0xFFFFFF);
+  return output & 0xFFFFFF;
 }
 
-Instruction::Instruction(char instructionWithArgs[165], int actualLength)
+Instruction::Instruction(char instructionWithArgs[MAX_MESSAGE_LENGTH], int actualLength)
 {
   Serial.print("actual length: ");
   +Serial.println(actualLength);
@@ -66,11 +68,12 @@ uint16_t Instruction::serialize()
 
 void Instruction::send()
 {
-  Serial.print(this->serialize());
+  // Serial.println(this->serialize());
+  this->sendf("%.4X");
 }
 
 // "%.4X" as fmt for 4-bit hex.
-void Instruction::fsend(char *fmt)
+void Instruction::sendf(char *fmt)
 {
   char formatted[4];
   uint16_t fullInstruction = (instructionCode & 0xF000) | ((arg1 & 0xF) << 8) | ((arg2 & 0xF) << 4) | (arg3 & 0xF);
