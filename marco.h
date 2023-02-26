@@ -29,6 +29,7 @@ namespace marco
     DisplayConfiguration(std::string header, std::string text);
     DisplayConfiguration(DisplayRow inputLines[MAX_DISPLAY_TEXT_ROWS]);
     void clear();
+    void clear(uint8_t startLine, uint8_t endLine);
     void setText(std::string text, bool inverted, int lineNo);
   };
   class MenuRow
@@ -77,9 +78,14 @@ namespace marco
     KeypressHandler *handler;
     uint32_t color;
     bool pressed;
+    unsigned long lastPressMillis;
+    unsigned long pressDuration;
+    uint8_t lastTransmittedDuration;
     virtual void press();
+    virtual void unpress();
     Key(uint8_t index);
     void setColor(uint32_t);
+    uint8_t durationToByte();
   };
   class Controller
   {
@@ -92,7 +98,6 @@ namespace marco
     RotaryEncoder *encoder;
     // Trackers
     int encoderPos;
-    bool pressed[12];
     String headerText;
     uint8_t iteration;
     Controller(Adafruit_NeoPixel *npx, Adafruit_SH1106G *ash, RotaryEncoder *re, DisplayConfiguration *dconf);

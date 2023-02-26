@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	"go.bug.st/serial"
@@ -20,10 +21,10 @@ import (
 const (
 	NUM_KEYS = 12
 
-	CLIPBOARD              = 0x0
-	CLIPBOARD_PRIME        = 0x1
-	CLIPBOARD_CANCEL_PRIME = 0x2
-	CLIPBOARD_REQUEST_CLIP = 0x3
+	EVENT   = 0x0
+	KEYUP   = 0x0001
+	KEYDOWN = 0x0002
+	KEYHOLD = 0x0003
 
 	OLED = 0xE
 
@@ -46,7 +47,7 @@ type Instruction struct {
 
 func NewInstructionFromSerial(serialInput string) (*Instruction, bool, error) {
 	serialInput = strings.TrimSuffix(serialInput, "\r\n")
-	fmt.Println(serialInput)
+	fmt.Printf("parsing: %s\n", serialInput)
 	var sanitizedInput string
 	if prefixIndex := strings.Index(serialInput, ARD_INSTRUCTION_PREFIX); prefixIndex == 0 {
 		sanitizedInput = serialInput[prefixIndex+ARD_INSTRUCTION_PREFIX_LENGTH : len(serialInput)-1]
@@ -89,7 +90,7 @@ func (i *Instruction) serialize() []byte {
 var (
 	port             serial.Port
 	clipboardManager *ClipboardManager
-	spacingRegex     = regexp.MustCompile("[^\\S ]")
+	spacingRegex     = regexp.MustCompile(`[^\S ]`)
 )
 
 func sendSerial(message []byte) error {
@@ -134,13 +135,24 @@ func clearOled() error {
 	return sendSerial(clearInstruction.serialize())
 }
 
+func clearOledLines(startLine byte, endLine byte) error {
+	clearInstruction := Instruction{
+		instructionCode: OLED,
+		arg1:            startLine,
+		arg2:            endLine,
+		arg3:            0,
+	}
+	return sendSerial(clearInstruction.serialize())
+}
+
 type Clipboard struct {
 	filepath string
 	value    string
 }
 
 type ClipboardManager struct {
-	clipboards [NUM_KEYS]*Clipboard
+	clipboards    [NUM_KEYS]*Clipboard
+	previousIndex int
 }
 
 func NewClipboardManager(directory string) *ClipboardManager {
@@ -193,6 +205,7 @@ func (cm *ClipboardManager) setClip(index int) (string, error) {
 	}
 
 	cm.clipboards[index].value = clipboardContents
+	cm.previousIndex = index
 	return clipboardContents, nil
 }
 
@@ -215,6 +228,8 @@ func (cm *ClipboardManager) getClip(index int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	cm.previousIndex = index
 	return buf.String(), file.Close()
 }
 
@@ -222,13 +237,20 @@ func (cm *ClipboardManager) hasClip(index int) bool {
 	return cm.clipboards[index] != nil && cm.clipboards[index].value != ""
 }
 
+func (cm *ClipboardManager) deleteClip(index int) error {
+	if cm.hasClip(index) {
+		cm.clipboards[index].value = ""
+		cm.previousIndex = index
+		return os.Truncate(cm.clipboards[index].filepath, 0)
+	}
+	return fmt.Errorf("attempted to delete non-existent clipboard %d", index)
+}
+
 func (cm *ClipboardManager) updateLEDs() {
 	for index := range cm.clipboards {
 		if cm.hasClip(index) {
-			fmt.Printf("about to set %d active\n", index)
 			setKeyColor(byte(index), CLIPBOARD_ACTIVE_COLOR)
 		} else {
-			fmt.Printf("about to set %d inactive\n", index)
 			setKeyColor(byte(index), CLIPBOARD_INACTIVE_COLOR)
 		}
 	}
@@ -259,27 +281,57 @@ func openOrCreate(path string) (*os.File, bool, error) {
 
 func delegate(i *Instruction) error {
 	switch i.instructionCode {
-	case CLIPBOARD:
-		keyIndex := i.arg1
-		err := clearOled()
+	case EVENT:
+		keyIndex := int(i.arg1)
+		setOledText(0, 1, fmt.Sprintf("clipboard %d:", keyIndex))
+		err := clearOledLines(1, 0)
 		if err != nil {
 			return err
 		}
-		if !clipboardManager.hasClip(int(keyIndex)) {
-			clip, err := clipboardManager.setClip(int(keyIndex))
-			if err != nil {
-				return err
+		switch i.arg2 {
+		case KEYUP:
+			{
+				holdDurationMs := int(i.arg3) * 100
+				if holdDurationMs < 1000 {
+
+					if clipboardManager.hasClip(keyIndex) {
+						doubleTap := keyIndex == clipboardManager.previousIndex
+						clip, err := clipboardManager.getClip(keyIndex)
+						if err != nil {
+							return err
+						}
+						if doubleTap {
+							clipboard.WriteAll(clip)
+							setOledText(1, 0, "successfully copied!")
+							setOledText(3, 0, clip)
+							clipboardManager.previousIndex = -1
+						} else {
+							setOledText(3, 0, clip)
+						}
+					} else {
+						setOledText(2, 0, "nothing here :(")
+						setOledText(4, 0, "Hold for 1s to copy")
+						setOledText(5, 0, "from host clipboard")
+					}
+				} else if clipboardManager.previousIndex != keyIndex && holdDurationMs >= 1000 && !clipboardManager.hasClip(keyIndex) {
+					clip, err := clipboardManager.setClip(keyIndex)
+					if err != nil {
+						return err
+					}
+					setOledText(1, 0, "set to:")
+					setOledText(3, 0, clip)
+				}
 			}
-			setOledText(1, 1, fmt.Sprintf("set clipboard %d to:", keyIndex))
-			setOledText(3, 0, clip)
-		} else {
-			clip, err := clipboardManager.getClip(int(keyIndex))
-			if err != nil {
-				return err
+		case KEYHOLD:
+			holdDurationMs := int(i.arg3) * 100
+			if holdDurationMs >= 1000 && clipboardManager.hasClip(keyIndex) {
+				err := clipboardManager.deleteClip(keyIndex)
+				if err != nil {
+					return err
+				}
+				clearOled()
+				setOledText(1, 0, "deleted clip!")
 			}
-			setOledText(1, 1, fmt.Sprintf("from clipboard %d:", keyIndex))
-			setOledText(3, 0, clip)
-			fmt.Printf("clip: %s", clip)
 		}
 		clipboardManager.updateLEDs()
 	}
@@ -309,13 +361,16 @@ func main() {
 	clipboardManager.updateLEDs()
 
 	for {
-		buff := make([]byte, 100)
+		buff := make([]byte, 165)
 		bytePos := 0
 		for !strings.Contains(string(buff), "\r\n") {
 			n, err := port.Read(buff[bytePos:])
 			if err != nil {
-				log.Fatal(err)
-				break
+				port, err = revivePortWithRetry(portName, mode, 3, 3*time.Second)
+				if err != nil {
+					log.Fatal(err)
+				}
+				continue
 			}
 			if n == 0 {
 				fmt.Println("\nEOF")
@@ -341,6 +396,25 @@ func main() {
 			}
 		}
 	}
+}
+
+func revivePortWithRetry(portName string, mode *serial.Mode, retries int, interval time.Duration) (serial.Port, error) {
+	totalRetries := 0
+	var err error
+
+	fmt.Printf("Unable to connect to %s, retrying in %d seconds...\n", portName, int(interval.Seconds()))
+	for totalRetries < retries {
+		port, err := serial.Open(portName, mode)
+		if err != nil {
+			totalRetries++
+			time.Sleep(interval)
+		} else {
+			fmt.Printf("Reconnected to %s successfully!\n", portName)
+			return port, nil
+		}
+	}
+	return nil, err
+
 }
 
 func selectPortByKnownSerial(ports []*enumerator.PortDetails) (string, error) {

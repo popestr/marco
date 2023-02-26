@@ -24,7 +24,7 @@ uint32_t marco::naiveHexConversion(const char *hexCode, uint8_t digits)
   for (uint8_t i = 0; i < digits; i++)
   {
     output = output | (hexCharToInt(hexCode[i]) << (4 * (digits - i - 1)));
-    mask = mask & 0xF << 4 * (digits - i - 1);
+    mask = mask | (0xF << 4 * (digits - i - 1));
   }
   Serial.print("hex converted to: ");
   Serial.println(output & mask);

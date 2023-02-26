@@ -6,9 +6,12 @@
 #include "marco.h"
 #include <string>
 
-#define PROG_CLIPBOARD 0x0
+#define EVENT 0x0
+#define KEYUP 0x0001
+#define KEYDOWN 0x0002
+#define KEYHOLD 0x0003
 
-#define ARD_KEY_LED 0xF
+#define KEY_LED 0xF
 #define SET_COLOR 0x0001
 #define TURN_OFF 0x0002
 
@@ -20,19 +23,6 @@
 #define TEXT_COLOR_INVERTED 0x0001
 
 using namespace marco;
-
-class Clipboard : public Key
-{
-public:
-  void press()
-  {
-    Instruction instruction(PROG_CLIPBOARD, index);
-    instruction.send();
-  }
-  Clipboard(uint8_t idx) : Key(idx)
-  {
-  }
-};
 
 DisplayRow::DisplayRow()
 {
@@ -70,12 +60,21 @@ DisplayConfiguration::DisplayConfiguration(DisplayRow inputLines[9])
   }
 }
 
-void DisplayConfiguration::clear()
+void DisplayConfiguration::clear(uint8_t startLine, uint8_t endLine)
 {
-  for (int lineNo = 0; lineNo < MAX_DISPLAY_TEXT_ROWS; lineNo++)
+  if (endLine < startLine)
+  {
+    endLine = MAX_DISPLAY_TEXT_ROWS;
+  }
+  for (uint8_t lineNo = startLine; lineNo < std::min(uint8_t(MAX_DISPLAY_TEXT_ROWS), endLine); lineNo++)
   {
     lines[lineNo].text.erase();
   }
+}
+
+void DisplayConfiguration::clear()
+{
+  clear(0, MAX_DISPLAY_TEXT_ROWS);
 }
 
 void DisplayConfiguration::setText(std::string text, bool inverted, int lineNo)
@@ -130,7 +129,7 @@ Controller::Controller(Adafruit_NeoPixel *npx, Adafruit_SH1106G *ash, RotaryEnco
   for (uint8_t i = 0; i < NUM_KEYS; i++)
   {
     pinMode(i + 1, INPUT_PULLUP);
-    keys[i] = new Clipboard(i);
+    keys[i] = new Key(i);
   }
 
   iteration = 0;
@@ -173,7 +172,7 @@ void Controller::handleInstruction(Instruction *i)
 {
   switch (i->instructionCode)
   {
-  case ARD_KEY_LED:
+  case KEY_LED:
   {
     const char *hexCode = i->additionalArgs.c_str();
     keys[i->arg1]->color = naiveHexConversion(hexCode);
@@ -185,7 +184,15 @@ void Controller::handleInstruction(Instruction *i)
     switch (i->arg3)
     {
     case CLEAR:
-      dc->clear();
+      if (i->arg1 == 0 && i->arg2 == 0)
+      {
+        dc->clear();
+      }
+      else
+      {
+        dc->clear(i->arg1, i->arg2);
+      }
+
       break;
     case SETTEXT:
       dc->setText(i->additionalArgs, i->arg1 > 0, i->arg2);
@@ -224,20 +231,19 @@ void Controller::refresh()
   for (int i = 0; i < NUM_KEYS; i++)
   {
     bool isPressed = !digitalRead(i + 1);
-    if (isPressed && !pressed[i])
+    if (isPressed)
     { // switch pressed!
-      pressed[i] = true;
       keys[i]->press();
-      pixels->setPixelColor(i, keys[i]->color);
-      // move the text into a 3x4 grid
-      // char strokes[] = {KEY_DELETE};
-      // size_t elems = 1;
-      // sendKeyCombo(strokes, elems);
+      // Serial.print("Just pressed ");
+      // Serial.println(i);
     }
-    else if (!isPressed)
+    else if (keys[i]->pressed)
     {
-      pressed[i] = false;
+      keys[i]->unpress();
+      // Serial.print("Just unpressed ");
+      // Serial.println(i);
     }
+    pixels->setPixelColor(i, keys[i]->color);
   }
 
   // show neopixels, increment swirl
