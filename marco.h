@@ -9,6 +9,8 @@
 #define MAX_DISPLAY_TEXT_WIDTH 21
 #define MAX_DISPLAY_TEXT_ROWS 8
 
+#define DEFAULT_INSTRUCTION_HEX_DIGITS 6
+
 namespace marco
 {
   class DisplayRow
@@ -18,16 +20,30 @@ namespace marco
     bool inverted;
     DisplayRow();
     DisplayRow(std::string text, bool inverted);
-    DisplayRow(std::string text, bool inverted, bool selectable);
   };
   class DisplayConfiguration
   {
   public:
-    DisplayRow lines[9];
+    DisplayRow lines[MAX_DISPLAY_TEXT_ROWS];
     DisplayConfiguration(std::string header);
     DisplayConfiguration(std::string header, std::string text);
+    DisplayConfiguration(DisplayRow inputLines[MAX_DISPLAY_TEXT_ROWS]);
     void clear();
     void setText(std::string text, bool inverted, int lineNo);
+  };
+  class MenuRow
+  {
+  public:
+    DisplayRow displayRow;
+    void invoke();
+    MenuRow(std::string text, bool selected);
+  };
+  class MenuConfiguration
+  {
+  public:
+    MenuRow rows[10];
+    uint8_t selectedRow;
+    DisplayRow *toConfig();
   };
   class KeypressHandler
   {
@@ -36,6 +52,7 @@ namespace marco
   };
   int hexCharToInt(char hexChar);
   uint32_t naiveHexConversion(const char *hexCode);
+  uint32_t naiveHexConversion(const char *hexCode, uint8_t digits);
   class Instruction
   {
   public:
@@ -51,7 +68,7 @@ namespace marco
     Instruction(uint8_t instructionCode);
     uint16_t serialize();
     void send();
-    void sendf(char *fmt);
+    void sendf(const char *fmt);
   };
   class Key
   {
@@ -61,7 +78,6 @@ namespace marco
     uint32_t color;
     bool pressed;
     virtual void press();
-    virtual void handle(Instruction *i);
     Key(uint8_t index);
     void setColor(uint32_t);
   };
@@ -82,13 +98,13 @@ namespace marco
     Controller(Adafruit_NeoPixel *npx, Adafruit_SH1106G *ash, RotaryEncoder *re, DisplayConfiguration *dconf);
     ~Controller();
     void consumeSerial();
+    void handleInstruction(Instruction *i);
     void refresh();
 
   private:
     void setupDisplay();
     void refreshDisplay();
     void sendKeyCombo(char keys[], size_t elems);
-    void delegateInstruction(Instruction *i);
     void playStartupTone();
     uint32_t Wheel(byte WheelPos);
   };

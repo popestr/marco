@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -31,6 +31,9 @@ const (
 
 	ARD_INSTRUCTION_PREFIX        = "[ARD::0x"
 	ARD_INSTRUCTION_PREFIX_LENGTH = len(ARD_INSTRUCTION_PREFIX)
+	CLIP_DIRECTORY                = "clipboards"
+	CLIPBOARD_ACTIVE_COLOR        = "21ff4a"
+	CLIPBOARD_INACTIVE_COLOR      = "000000"
 )
 
 type Instruction struct {
@@ -47,7 +50,7 @@ func NewInstructionFromSerial(serialInput string) (*Instruction, bool, error) {
 	var sanitizedInput string
 	if prefixIndex := strings.Index(serialInput, ARD_INSTRUCTION_PREFIX); prefixIndex == 0 {
 		sanitizedInput = serialInput[prefixIndex+ARD_INSTRUCTION_PREFIX_LENGTH : len(serialInput)-1]
-		fmt.Println(sanitizedInput)
+		// fmt.Println(sanitizedInput)
 	} else {
 		return nil, false, nil
 	}
@@ -80,12 +83,13 @@ func (i *Instruction) hexFormatted() string {
 }
 
 func (i *Instruction) serialize() []byte {
-	return []byte(fmt.Sprintf("[MTH::%s]%s\r\n", i.hexFormatted(), i.additionalArgs))
+	return []byte(fmt.Sprintf("[MTH::%s]%s\r\n", i.hexFormatted(), spacingRegex.ReplaceAllString(i.additionalArgs, " ")))
 }
 
 var (
 	port             serial.Port
 	clipboardManager *ClipboardManager
+	spacingRegex     = regexp.MustCompile("[^\\S ]")
 )
 
 func sendSerial(message []byte) error {
@@ -99,25 +103,35 @@ func sendSerial(message []byte) error {
 	return nil
 }
 
-func setKeyColor(keyNo byte, hexCode string) error {
-	colorSend := Instruction{
+// setKeyColor sets the color of a key's LED.
+// Indexed from 0-11 for an Adafruit RP2040 Macropad.
+func setKeyColor(keyIndex byte, hexCode string) error {
+	colorInstruction := Instruction{
 		instructionCode: KEYS,
-		arg1:            keyNo,
+		arg1:            keyIndex,
 		additionalArgs:  strings.ToUpper(hexCode),
 		arg3:            1,
 	}
-	return sendSerial(colorSend.serialize())
+	return sendSerial(colorInstruction.serialize())
 }
 
 func setOledText(lineNo byte, inverted byte, text string) error {
-	textSend := Instruction{
+	textInstruction := Instruction{
 		instructionCode: OLED,
 		arg1:            inverted,
 		arg2:            lineNo,
 		arg3:            1,
 		additionalArgs:  text,
 	}
-	return sendSerial(textSend.serialize())
+	return sendSerial(textInstruction.serialize())
+}
+
+func clearOled() error {
+	clearInstruction := Instruction{
+		instructionCode: OLED,
+		arg3:            0,
+	}
+	return sendSerial(clearInstruction.serialize())
 }
 
 type Clipboard struct {
@@ -138,40 +152,48 @@ func NewClipboardManager(directory string) *ClipboardManager {
 		log.Fatal(err)
 	}
 	for i := 0; i < NUM_KEYS; i++ {
-		filepath := directory + "-clipboard" + fmt.Sprint(i) + ".txt"
+		filepath := directory + "/clipboard" + fmt.Sprint(i) + ".txt"
 		if err != nil {
 			log.Fatal(err)
 		}
 		result.clipboards[i] = &Clipboard{
 			filepath: filepath,
 		}
+		value, err := result.getClip(i)
+		if err != nil {
+			log.Fatal(err)
+		}
+		result.clipboards[i].value = value
 	}
 	return result
 }
 
-func (cm *ClipboardManager) setClip(index int) error {
+func (cm *ClipboardManager) setClip(index int) (string, error) {
 	if index < 0 || index > NUM_KEYS-1 {
-		return fmt.Errorf("index %d out of bounds", index)
+		return "", fmt.Errorf("index %d out of bounds", index)
 	}
 	if cm.clipboards[index].filepath == "" {
-		return fmt.Errorf("clipboard %d has no path", index)
+		return "", fmt.Errorf("clipboard %d has no path", index)
 	}
 
-	file, err := openOrCreate(cm.clipboards[index].filepath)
+	file, _, err := openOrCreate(cm.clipboards[index].filepath)
 	if err != nil {
-		return err
+		return "", err
 	}
+	defer file.Close()
 
 	clipboardContents, err := clipboard.ReadAll()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	_, err = file.Write([]byte(clipboardContents))
 	if err != nil {
-		return err
+		return "", err
 	}
-	return nil
+
+	cm.clipboards[index].value = clipboardContents
+	return clipboardContents, nil
 }
 
 func (cm *ClipboardManager) getClip(index int) (string, error) {
@@ -181,9 +203,12 @@ func (cm *ClipboardManager) getClip(index int) (string, error) {
 	if cm.clipboards[index].filepath == "" {
 		return "", fmt.Errorf("clipboard %d has no path", index)
 	}
-	file, err := os.Open(cm.clipboards[index].filepath)
+	file, created, err := openOrCreate(cm.clipboards[index].filepath)
 	if err != nil {
 		return "", err
+	}
+	if created {
+		return "", nil
 	}
 	buf := bytes.NewBuffer(nil)
 	_, err = io.Copy(buf, file)
@@ -191,6 +216,22 @@ func (cm *ClipboardManager) getClip(index int) (string, error) {
 		return "", err
 	}
 	return buf.String(), file.Close()
+}
+
+func (cm *ClipboardManager) hasClip(index int) bool {
+	return cm.clipboards[index] != nil && cm.clipboards[index].value != ""
+}
+
+func (cm *ClipboardManager) updateLEDs() {
+	for index := range cm.clipboards {
+		if cm.hasClip(index) {
+			fmt.Printf("about to set %d active\n", index)
+			setKeyColor(byte(index), CLIPBOARD_ACTIVE_COLOR)
+		} else {
+			fmt.Printf("about to set %d inactive\n", index)
+			setKeyColor(byte(index), CLIPBOARD_INACTIVE_COLOR)
+		}
+	}
 }
 
 func createDirIfNotExists(path string) error {
@@ -205,35 +246,42 @@ func createDirIfNotExists(path string) error {
 	return nil
 }
 
-func openOrCreate(path string) (*os.File, error) {
+func openOrCreate(path string) (*os.File, bool, error) {
 	if stat, err := os.Stat(path); os.IsNotExist(err) {
-		return os.Create(path)
+		file, err := os.Create(path)
+		return file, true, err
 	} else if stat.IsDir() {
-		return nil, fmt.Errorf("path %s exists but is a directory", path)
+		return nil, false, fmt.Errorf("path %s exists but is a directory", path)
 	}
-	return os.Open(path)
+	file, err := os.OpenFile(path, os.O_RDWR, 0660)
+	return file, false, err
 }
 
 func delegate(i *Instruction) error {
 	switch i.instructionCode {
 	case CLIPBOARD:
-		switch i.arg2 {
-		case CLIPBOARD_PRIME:
-			setKeyColor(i.arg1, "ffffff")
-		case CLIPBOARD_CANCEL_PRIME:
-			setKeyColor(i.arg1, "000000")
-			clip, err := clipboard.ReadAll()
-			if err != nil {
-				return err
-			}
-			setOledText(1, 0, clip)
-		case CLIPBOARD_REQUEST_CLIP:
-			clip, err := clipboard.ReadAll()
-			if err != nil {
-				return err
-			}
-			setOledText(1, 0, clip)
+		keyIndex := i.arg1
+		err := clearOled()
+		if err != nil {
+			return err
 		}
+		if !clipboardManager.hasClip(int(keyIndex)) {
+			clip, err := clipboardManager.setClip(int(keyIndex))
+			if err != nil {
+				return err
+			}
+			setOledText(1, 1, fmt.Sprintf("set clipboard %d to:", keyIndex))
+			setOledText(3, 0, clip)
+		} else {
+			clip, err := clipboardManager.getClip(int(keyIndex))
+			if err != nil {
+				return err
+			}
+			setOledText(1, 1, fmt.Sprintf("from clipboard %d:", keyIndex))
+			setOledText(3, 0, clip)
+			fmt.Printf("clip: %s", clip)
+		}
+		clipboardManager.updateLEDs()
 	}
 	return nil
 }
@@ -257,6 +305,9 @@ func main() {
 		log.Fatal(err)
 	}
 
+	clipboardManager = NewClipboardManager(CLIP_DIRECTORY)
+	clipboardManager.updateLEDs()
+
 	for {
 		buff := make([]byte, 100)
 		bytePos := 0
@@ -278,15 +329,16 @@ func main() {
 			}
 			i, valid, err := NewInstructionFromSerial(instructionBytes)
 			if err != nil {
-				//
+				log.Fatal(err)
 			} else if !valid {
 				continue
 			}
 			fmt.Println(i)
 			fmt.Println(i.hexFormatted())
-			setKeyColor(byte(rand.Intn(7)), "ffffff")
-			setOledText(byte(rand.Intn(7)), 1, "yeubh")
-			delegate(i)
+			err = delegate(i)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }

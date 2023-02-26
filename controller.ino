@@ -7,9 +7,6 @@
 #include <string>
 
 #define PROG_CLIPBOARD 0x0
-#define PRIME 0x0001
-#define CANCEL_PRIME 0x0002
-#define REQUEST_CLIP 0x0003
 
 #define ARD_KEY_LED 0xF
 #define SET_COLOR 0x0001
@@ -27,71 +24,12 @@ using namespace marco;
 class Clipboard : public Key
 {
 public:
-  bool hasClip = false;
-  bool waitingForClip = false;
-
   void press()
   {
     Instruction instruction(PROG_CLIPBOARD, index);
-    if (!hasClip)
-    {
-      waitingForClip = !waitingForClip;
-      if (waitingForClip)
-      {
-        setColor(0x28b531);
-        instruction.arg2 = PRIME;
-      }
-      else
-      {
-        setColor(0);
-        instruction.arg2 = CANCEL_PRIME;
-      }
-    }
-    else
-    {
-      instruction.arg2 = REQUEST_CLIP;
-    }
     instruction.send();
   }
-  void handle(Instruction *i)
-  {
-    // Serial.print(F("delegated to key: "));
-    // Serial.print(index);
-    // Serial.print(" ");
-    // Serial.print("instruction code: ");
-    // Serial.println(i->instructionCode);
-    switch (i->instructionCode)
-    {
-    case ARD_KEY_LED:
-    {
-      const char *hexCode = i->additionalArgs.c_str();
-      color = naiveHexConversion(hexCode);
-      extern Controller *mothership;
-      mothership->pixels->setPixelColor(index, color);
-      break;
-    }
-    case OLED_DISPLAY:
-    {
-      extern Controller *mothership;
-      switch (i->arg3)
-      {
-      case CLEAR:
-        mothership->dc->clear();
-        break;
-      case SETTEXT:
-        mothership->dc->setText(i->additionalArgs, i->arg1 > 0, i->arg2);
-        break;
-      }
-      break;
-    }
-    default:
-      Serial.print(F("\""));
-      Serial.print(i->instructionCode);
-      Serial.println(F("\" is an unsupported instruction."));
-    }
-  }
-  Clipboard(uint8_t idx)
-      : Key(idx)
+  Clipboard(uint8_t idx) : Key(idx)
   {
   }
 };
@@ -108,7 +46,6 @@ DisplayRow::DisplayRow(std::string text, bool inverted)
   this->inverted = inverted;
 }
 
-// DisplayConfiguration implementation
 DisplayConfiguration::DisplayConfiguration(std::string header)
 {
   lines[0] = DisplayRow(header, true);
@@ -123,6 +60,14 @@ DisplayConfiguration::DisplayConfiguration(std::string header, std::string text)
     : DisplayConfiguration(header)
 {
   setText(text, false, 0);
+}
+
+DisplayConfiguration::DisplayConfiguration(DisplayRow inputLines[9])
+{
+  for (uint8_t i = 0; i < 9; i++)
+  {
+    lines[i] = inputLines[i];
+  }
 }
 
 void DisplayConfiguration::clear()
@@ -217,10 +162,41 @@ void Controller::consumeSerial()
       Serial.println(i.arg1);
       Serial.println(i.additionalArgs.c_str());
       Serial.println(message);
-      delegateInstruction(&i);
+      handleInstruction(&i);
       // Reset for the next message
       message_pos = 0;
     }
+  }
+}
+
+void Controller::handleInstruction(Instruction *i)
+{
+  switch (i->instructionCode)
+  {
+  case ARD_KEY_LED:
+  {
+    const char *hexCode = i->additionalArgs.c_str();
+    keys[i->arg1]->color = naiveHexConversion(hexCode);
+    // pixels->setPixelColor(i->arg1, keys[i->arg1]->color);
+    break;
+  }
+  case OLED_DISPLAY:
+  {
+    switch (i->arg3)
+    {
+    case CLEAR:
+      dc->clear();
+      break;
+    case SETTEXT:
+      dc->setText(i->additionalArgs, i->arg1 > 0, i->arg2);
+      break;
+    }
+    break;
+  }
+  default:
+    Serial.print(F("\""));
+    Serial.print(i->instructionCode);
+    Serial.println(F("\" is an unsupported instruction."));
   }
 }
 
@@ -231,13 +207,13 @@ void Controller::refresh()
 
   encoder->tick(); // check the encoder
   int tmp = encoder->getPosition();
-  if (tmp > encoderPos)
+  if (tmp > encoderPos) // moved counter-clockwise
   {
     Keyboard.press(KEY_UP_ARROW);
     delay(10);
     Keyboard.releaseAll();
   }
-  else if (tmp < encoderPos)
+  else if (tmp < encoderPos) // moved clockwise
   {
     Keyboard.press(KEY_DOWN_ARROW);
     delay(10);
@@ -247,20 +223,18 @@ void Controller::refresh()
 
   for (int i = 0; i < NUM_KEYS; i++)
   {
-    if (!digitalRead(i + 1) && !pressed[i])
+    bool isPressed = !digitalRead(i + 1);
+    if (isPressed && !pressed[i])
     { // switch pressed!
       pressed[i] = true;
       keys[i]->press();
-      pixels->setPixelColor(i, keys[i]->color); // make white
+      pixels->setPixelColor(i, keys[i]->color);
       // move the text into a 3x4 grid
-      display->setCursor((i % 3) * 48, 32 + (i / 3) * 8);
-      display->print("KEY");
-      display->print(i + 1);
       // char strokes[] = {KEY_DELETE};
       // size_t elems = 1;
       // sendKeyCombo(strokes, elems);
     }
-    else if (digitalRead(i + 1))
+    else if (!isPressed)
     {
       pressed[i] = false;
     }
@@ -337,17 +311,6 @@ void Controller::sendKeyCombo(char keys[], size_t elems)
     delay(100);
   }
   Keyboard.releaseAll();
-}
-
-void Controller::delegateInstruction(Instruction *i)
-{
-  if (i->arg1 < 0 || i->arg1 > NUM_KEYS - 1)
-  {
-    Serial.print(F("invalid key index: "));
-    Serial.println(i->arg1);
-    return;
-  }
-  keys[i->arg1]->handle(i);
 }
 
 void Controller::playStartupTone()

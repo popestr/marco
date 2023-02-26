@@ -7,20 +7,33 @@ using namespace marco;
 
 int marco::hexCharToInt(char hexchar)
 {
+  // please do not the lowercase
+  if (hexchar > 'a')
+  {
+    hexchar -= 'a' - 'A';
+  }
+
   // if ascii ordering changes, we're fucked :(
   return (hexchar >= 'A') ? (hexchar - 'A' + 10) : (hexchar - '0');
 }
 
-uint32_t marco::naiveHexConversion(const char *hexCode)
+uint32_t marco::naiveHexConversion(const char *hexCode, uint8_t digits)
 {
   uint32_t output = 0x0;
-  for (uint8_t i = 0; i < 6; i++)
+  uint32_t mask = 0x0;
+  for (uint8_t i = 0; i < digits; i++)
   {
-    output = output | (hexCharToInt(hexCode[i]) << (4 * i));
+    output = output | (hexCharToInt(hexCode[i]) << (4 * (digits - i - 1)));
+    mask = mask & 0xF << 4 * (digits - i - 1);
   }
   Serial.print("hex converted to: ");
-  Serial.println(output & 0xFFFFFF);
-  return output & 0xFFFFFF;
+  Serial.println(output & mask);
+  return output & mask;
+}
+
+uint32_t marco::naiveHexConversion(const char *hexCode)
+{
+  return naiveHexConversion(hexCode, DEFAULT_INSTRUCTION_HEX_DIGITS);
 }
 
 Instruction::Instruction(char instructionWithArgs[MAX_MESSAGE_LENGTH], int actualLength)
@@ -73,7 +86,7 @@ void Instruction::send()
 }
 
 // "%.4X" as fmt for 4-bit hex.
-void Instruction::sendf(char *fmt)
+void Instruction::sendf(const char *fmt)
 {
   char formatted[4];
   uint16_t fullInstruction = (instructionCode & 0xF000) | ((arg1 & 0xF) << 8) | ((arg2 & 0xF) << 4) | (arg3 & 0xF);
