@@ -8,9 +8,14 @@ using namespace marco;
 int marco::hexCharToInt(char hexchar)
 {
   // please do not the lowercase
-  if (hexchar > 'a')
+  if (hexchar >= 'a')
   {
     hexchar -= 'a' - 'A';
+  }
+
+  if (!(hexchar >= 'A' && hexchar <= 'F') && !(hexchar >= '0' && hexchar <= '9'))
+  {
+    throw std::runtime_error("hex out of bounds");
   }
 
   // if ascii ordering changes, we're fucked :(
@@ -39,7 +44,7 @@ uint32_t marco::naiveHexConversion(const char *hexCode)
 Instruction::Instruction(char instructionWithArgs[MAX_MESSAGE_LENGTH], int actualLength)
 {
   Serial.print("actual length: ");
-  +Serial.println(actualLength);
+  Serial.println(actualLength);
   if (actualLength >= 12)
   {
     instructionCode = hexCharToInt(instructionWithArgs[8]);

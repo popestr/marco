@@ -38,8 +38,9 @@ void Key::press()
 void Key::unpress()
 {
   pressed = false;
-  Instruction keyup(EVENT, index, KEYUP, durationToByte());
   pressDuration = 0;
+
+  Instruction keyup(EVENT, index, KEYUP, durationToByte());
   keyup.send();
 }
 

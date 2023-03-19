@@ -112,7 +112,6 @@ Controller::Controller(Adafruit_NeoPixel *npx, Adafruit_SH1106G *ash, RotaryEnco
   dc = dconf;
 
   // playStartupTone();
-  // Create the neopixel strip with the built in definitions NUM_NEOPIXEL and PIN_NEOPIXEL
   // start pixels!
   pixels->begin();
   pixels->setBrightness(255);
@@ -176,7 +175,6 @@ void Controller::handleInstruction(Instruction *i)
   {
     const char *hexCode = i->additionalArgs.c_str();
     keys[i->arg1]->color = naiveHexConversion(hexCode);
-    // pixels->setPixelColor(i->arg1, keys[i->arg1]->color);
     break;
   }
   case OLED_DISPLAY:
@@ -234,14 +232,10 @@ void Controller::refresh()
     if (isPressed)
     { // switch pressed!
       keys[i]->press();
-      // Serial.print("Just pressed ");
-      // Serial.println(i);
     }
     else if (keys[i]->pressed)
     {
       keys[i]->unpress();
-      // Serial.print("Just unpressed ");
-      // Serial.println(i);
     }
     pixels->setPixelColor(i, keys[i]->color);
   }
@@ -288,22 +282,6 @@ void Controller::refreshDisplay()
     }
     display->println(dc->lines[i].text.c_str());
   }
-  // // check encoder press
-  // display->setCursor(0, 24);
-  // if (!digitalRead(PIN_SWITCH))
-  // {
-  //   Serial.println(F("Encoder button"));
-  //   display->print(F("Encoder pressed "));
-  //   pixels->setBrightness(255); // bright!
-  // }
-  // else
-  // {
-  //   pixels->setBrightness(80);
-  // }
-
-  // display->setCursor(0, 8);
-  // display->print(F("Rotary encoder: "));
-  // display->print(encoderPos);
 
   // display oled
   display->display();
