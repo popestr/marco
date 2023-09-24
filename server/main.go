@@ -424,6 +424,7 @@ func main() {
 		keys[i] = &Key{}
 	}
 
+INITIALIZE:
 	clearOled()
 	setOledText(0, 1, "-MULTICLIPBOARD MODE-")
 	setOledText(2, 0, "registered with host!")
@@ -443,7 +444,7 @@ func main() {
 				if err != nil {
 					log.Fatal(err)
 				}
-				continue
+				goto INITIALIZE
 			}
 			if n == 0 {
 				fmt.Println("\nEOF")

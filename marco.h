@@ -51,9 +51,9 @@ namespace marco
   public:
     virtual void handle();
   };
-  int hexCharToInt(char hexChar);
-  uint32_t naiveHexConversion(const char *hexCode);
-  uint32_t naiveHexConversion(const char *hexCode, uint8_t digits);
+  byte hexCharToByte(char hexChar);
+  uint32_t intFromHexString(const char *hexCode);
+  uint32_t intFromHexString(const char *hexCode, uint8_t digits);
   class Instruction
   {
   public:

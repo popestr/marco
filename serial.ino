@@ -2,12 +2,9 @@
 
 using namespace marco;
 
-// #define INSTRUCTION_START_INDEX = 3
-// #define APPROVED_CLIENT = 0xbf00
-
-int marco::hexCharToInt(char hexchar)
+byte marco::hexCharToByte(char hexchar)
 {
-  // please do not the lowercase
+  // coerce lowercase
   if (hexchar >= 'a')
   {
     hexchar -= 'a' - 'A';
@@ -15,20 +12,19 @@ int marco::hexCharToInt(char hexchar)
 
   if (!(hexchar >= 'A' && hexchar <= 'F') && !(hexchar >= '0' && hexchar <= '9'))
   {
-    throw std::runtime_error("hex out of bounds");
+    return -1;
   }
 
-  // if ascii ordering changes, we're fucked :(
   return (hexchar >= 'A') ? (hexchar - 'A' + 10) : (hexchar - '0');
 }
 
-uint32_t marco::naiveHexConversion(const char *hexCode, uint8_t digits)
+uint32_t marco::intFromHexString(const char *hexCode, uint8_t digits)
 {
   uint32_t output = 0x0;
   uint32_t mask = 0x0;
   for (uint8_t i = 0; i < digits; i++)
   {
-    output = output | (hexCharToInt(hexCode[i]) << (4 * (digits - i - 1)));
+    output = output | (hexCharToByte(hexCode[i]) << (4 * (digits - i - 1)));
     mask = mask | (0xF << 4 * (digits - i - 1));
   }
   Serial.print("hex converted to: ");
@@ -36,9 +32,9 @@ uint32_t marco::naiveHexConversion(const char *hexCode, uint8_t digits)
   return output & mask;
 }
 
-uint32_t marco::naiveHexConversion(const char *hexCode)
+uint32_t marco::intFromHexString(const char *hexCode)
 {
-  return naiveHexConversion(hexCode, DEFAULT_INSTRUCTION_HEX_DIGITS);
+  return intFromHexString(hexCode, DEFAULT_INSTRUCTION_HEX_DIGITS);
 }
 
 Instruction::Instruction(char instructionWithArgs[MAX_MESSAGE_LENGTH], int actualLength)
@@ -47,10 +43,10 @@ Instruction::Instruction(char instructionWithArgs[MAX_MESSAGE_LENGTH], int actua
   Serial.println(actualLength);
   if (actualLength >= 12)
   {
-    instructionCode = hexCharToInt(instructionWithArgs[8]);
-    arg1 = hexCharToInt(instructionWithArgs[9]);
-    arg2 = hexCharToInt(instructionWithArgs[10]);
-    arg3 = hexCharToInt(instructionWithArgs[11]);
+    instructionCode = hexCharToByte(instructionWithArgs[8]);
+    arg1 = hexCharToByte(instructionWithArgs[9]);
+    arg2 = hexCharToByte(instructionWithArgs[10]);
+    arg3 = hexCharToByte(instructionWithArgs[11]);
     if (actualLength > 12)
     {
       additionalArgs = std::string(&instructionWithArgs[13], actualLength - 13);
@@ -86,7 +82,6 @@ uint16_t Instruction::serialize()
 
 void Instruction::send()
 {
-  // Serial.println(this->serialize());
   this->sendf("%.4X");
 }
 
@@ -94,7 +89,11 @@ void Instruction::send()
 void Instruction::sendf(const char *fmt)
 {
   char formatted[4];
-  uint16_t fullInstruction = (instructionCode & 0xF000) | ((arg1 & 0xF) << 8) | ((arg2 & 0xF) << 4) | (arg3 & 0xF);
+  uint16_t fullInstruction =
+      ((instructionCode & 0xF) << 16) |
+      ((arg1 & 0xF) << 8) |
+      ((arg2 & 0xF) << 4) |
+      (arg3 & 0xF);
 
   sprintf(formatted, fmt, fullInstruction);
 

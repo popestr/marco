@@ -174,7 +174,7 @@ void Controller::handleInstruction(Instruction *i)
   case KEY_LED:
   {
     const char *hexCode = i->additionalArgs.c_str();
-    keys[i->arg1]->color = naiveHexConversion(hexCode);
+    keys[i->arg1]->color = intFromHexString(hexCode);
     break;
   }
   case OLED_DISPLAY:
