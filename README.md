@@ -1,4 +1,4 @@
-# M.A.R.C.O
+# M.A.R.C.O.
 
 ## (Man, A Really Cool Opensourcemacrodriver)
 
